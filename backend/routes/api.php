@@ -15,6 +15,11 @@ use App\Http\Controllers\Api\PromotionController;
 use App\Http\Controllers\Api\RoomController;
 use App\Http\Controllers\Api\SeanceController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\PfeController;
+use App\Http\Controllers\Api\LessonProgressController;
+use App\Http\Controllers\Api\QuizController;
+use App\Http\Controllers\Api\AssignmentController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/ping', fn () => response()->json([
@@ -62,6 +67,14 @@ Route::middleware('auth:api')->group(function () {
     // E-learning (any authenticated user can enroll/learn)
     Route::get('my-courses', [CourseController::class, 'myCourses']);
     Route::post('courses/{course}/enroll', [CourseController::class, 'enroll']);
+    Route::post('lessons/{lesson}/progress', [LessonProgressController::class, 'updateProgress']);
+    Route::get('quizzes/{quiz}', [QuizController::class, 'show']);
+    Route::get('quiz-attempts/{attempt}/review', [QuizController::class, 'review']);
+
+    // Payments (any authenticated user)
+    Route::get('payments', [PaymentController::class, 'index']);
+    Route::post('payments/purchase-course', [PaymentController::class, 'purchaseCourse']);
+    Route::post('payments/pay-invoice', [PaymentController::class, 'payInvoice']);
 
     /*
     | Admin / SuperAdmin — user & system management
@@ -71,6 +84,11 @@ Route::middleware('auth:api')->group(function () {
         Route::apiResource('users', UserController::class);
         Route::apiResource('departments', DepartmentController::class)->except(['index', 'show']);
         Route::apiResource('rooms', RoomController::class)->except(['index', 'show']);
+
+        // Admin Billing & Invoicing
+        Route::get('admin/payments', [PaymentController::class, 'adminPayments']);
+        Route::get('admin/invoices', [PaymentController::class, 'adminInvoices']);
+        Route::post('admin/invoices', [PaymentController::class, 'storeInvoice']);
     });
 
     // Departments & rooms — readable by staff (write rules above)
@@ -92,6 +110,10 @@ Route::middleware('auth:api')->group(function () {
         Route::post('seances', [SeanceController::class, 'store']);
         Route::put('seances/{seance}', [SeanceController::class, 'update']);
         Route::delete('seances/{seance}', [SeanceController::class, 'destroy']);
+
+        // PFE Coordinator actions
+        Route::get('pfe-projects', [PfeController::class, 'index']);
+        Route::patch('pfe-projects/{pfe_project}/schedule-defense', [PfeController::class, 'scheduleDefense']);
     });
 
     // Academic structure — readable by all staff + students
@@ -122,6 +144,8 @@ Route::middleware('auth:api')->group(function () {
         Route::post('grades/bulk', [GradeController::class, 'bulkStore']);
         Route::put('grades/{grade}', [GradeController::class, 'update']);
         Route::delete('grades/{grade}', [GradeController::class, 'destroy']);
+        Route::post('grades/calculate-module-validation', [GradeController::class, 'calculateModuleValidation']);
+        Route::post('grades/calculate-semester-compensation', [GradeController::class, 'calculateSemesterCompensation']);
 
         Route::post('absences/bulk', [AbsenceController::class, 'bulkStore']);
         Route::put('absences/{absence}', [AbsenceController::class, 'update']);
@@ -131,17 +155,59 @@ Route::middleware('auth:api')->group(function () {
         Route::post('courses', [CourseController::class, 'store']);
         Route::put('courses/{course}', [CourseController::class, 'update']);
         Route::delete('courses/{course}', [CourseController::class, 'destroy']);
+        Route::post('courses/{course}/sections', [CourseController::class, 'storeSection']);
+        Route::post('sections/{section}/lessons', [CourseController::class, 'storeLesson']);
+        Route::post('lessons/{lesson}/quizzes', [CourseController::class, 'storeQuiz']);
+        Route::post('courses/{course}/assignments', [CourseController::class, 'storeAssignment']);
+
+        // Quiz Question Builder
+        Route::post('quizzes/{quiz}/questions', [QuizController::class, 'addQuestion']);
+        Route::get('question-banks', [QuizController::class, 'indexQuestionBank']);
+        Route::post('question-banks', [QuizController::class, 'storeQuestionBank']);
+        Route::post('quizzes/{quiz}/import-question', [QuizController::class, 'importQuestion']);
+        Route::get('quizzes/{quiz}/attempts', [QuizController::class, 'indexAttempts']);
+
+        // Homework Submissions & Grading
+        Route::get('assignments/{assignment}/submissions', [AssignmentController::class, 'indexSubmissions']);
+        Route::post('submissions/{submission}/grade', [AssignmentController::class, 'gradeSubmission']);
+        Route::put('assignments/{assignment}', [AssignmentController::class, 'update']);
+        Route::delete('assignments/{assignment}', [AssignmentController::class, 'destroy']);
+
+        // QR Attendance & Justifications Review
+        Route::post('seances/{seance}/qr-tokens', [AbsenceController::class, 'generateQrToken']);
+        Route::patch('justifications/{justification}/review', [AbsenceController::class, 'reviewJustification']);
 
         // Announcements authoring
         Route::post('announcements', [AnnouncementController::class, 'store']);
         Route::put('announcements/{announcement}', [AnnouncementController::class, 'update']);
         Route::delete('announcements/{announcement}', [AnnouncementController::class, 'destroy']);
+
+        // PFE Professor actions
+        Route::get('professor/pfe-projects', [PfeController::class, 'assigned']);
+        Route::patch('pfe-projects/{pfe_project}/status', [PfeController::class, 'updateStatus']);
+        Route::patch('pfe-projects/{pfe_project}/grade', [PfeController::class, 'gradeDefense']);
     });
 
     /*
-    | Student — justify own absences
+    | Student — justify own absences & PFE
     */
     Route::middleware('role:Student')->group(function () {
+        Route::post('absences/{absence}/justify', [AbsenceController::class, 'justify']);
+
+        // Student PFE routes
+        Route::get('my-pfe', [PfeController::class, 'myProject']);
+        Route::post('pfe-projects', [PfeController::class, 'store']);
+
+        // Quiz attempts
+        Route::post('quizzes/{quiz}/attempts', [QuizController::class, 'startAttempt']);
+        Route::post('quiz-attempts/{attempt}/submit', [QuizController::class, 'submitAttempt']);
+        Route::post('quiz-attempts/{attempt}/infraction', [QuizController::class, 'logInfraction']);
+
+        // Homework submission
+        Route::post('assignments/{assignment}/submit', [AssignmentController::class, 'submitHomework']);
+
+        // QR Check-in & Justifications upload
+        Route::post('absences/scan-qr', [AbsenceController::class, 'scanQrCode']);
         Route::post('absences/{absence}/justify', [AbsenceController::class, 'justify']);
     });
 });

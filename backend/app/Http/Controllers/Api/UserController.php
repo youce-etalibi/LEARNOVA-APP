@@ -12,7 +12,7 @@ class UserController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = User::with('roles:id,name')->withCount([]);
+        $query = User::with(['roles:id,name', 'professor', 'student'])->withCount([]);
 
         if ($search = $request->query('search')) {
             $query->where(function ($q) use ($search) {

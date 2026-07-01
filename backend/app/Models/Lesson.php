@@ -16,4 +16,9 @@ class Lesson extends Model
     {
         return $this->belongsTo(CourseSection::class, 'section_id');
     }
+
+    public function quizzes(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Quiz::class);
+    }
 }

@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class QuizAttempt extends Model
 {
-    protected $fillable = ['quiz_id', 'user_id', 'score', 'started_at', 'finished_at'];
+    protected $fillable = ['quiz_id', 'user_id', 'score', 'started_at', 'finished_at', 'infractions_count'];
 
     protected $casts = [
         'score' => 'decimal:2',

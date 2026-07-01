@@ -42,4 +42,14 @@ class Professor extends Model
     {
         return $this->hasMany(Assignment::class);
     }
+
+    public function pfeProjects(): HasMany
+    {
+        return $this->hasMany(PfeProject::class);
+    }
+
+    public function questionBanks(): HasMany
+    {
+        return $this->hasMany(QuestionBank::class);
+    }
 }

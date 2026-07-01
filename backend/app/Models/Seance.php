@@ -42,4 +42,9 @@ class Seance extends Model
     {
         return $this->hasMany(Absence::class);
     }
+
+    public function qrTokens(): HasMany
+    {
+        return $this->hasMany(SeanceQrToken::class);
+    }
 }

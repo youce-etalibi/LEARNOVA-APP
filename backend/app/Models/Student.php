@@ -34,4 +34,24 @@ class Student extends Model
     {
         return $this->hasMany(Submission::class);
     }
+
+    public function tuitionInvoices(): HasMany
+    {
+        return $this->hasMany(TuitionInvoice::class);
+    }
+
+    public function pfeProject(): HasOne
+    {
+        return $this->hasOne(PfeProject::class);
+    }
+
+    public function moduleStatuses(): HasMany
+    {
+        return $this->hasMany(StudentModuleStatus::class);
+    }
+
+    public function warnings(): HasMany
+    {
+        return $this->hasMany(StudentWarning::class);
+    }
 }

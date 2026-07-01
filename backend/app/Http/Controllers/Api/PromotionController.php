@@ -37,7 +37,7 @@ class PromotionController extends Controller
 
     public function show(Promotion $promotion): JsonResponse
     {
-        return response()->json($promotion->load('filiere', 'students.user:id,name,email'));
+        return response()->json($promotion->load('filiere', 'students.user:id,name,email', 'students.warnings'));
     }
 
     public function update(Request $request, Promotion $promotion): JsonResponse

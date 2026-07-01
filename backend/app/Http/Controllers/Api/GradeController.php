@@ -116,4 +116,38 @@ class GradeController extends Controller
 
         return response()->json(['message' => 'Note supprimée.']);
     }
+
+    public function calculateModuleValidation(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'student_id' => ['required', 'exists:students,id'],
+            'module_id' => ['required', 'exists:modules,id'],
+            'academic_year' => ['required', 'string', 'max:20'],
+        ]);
+
+        $service = new \App\Services\MoroccanAcademicService();
+        $status = $service->calculateModuleStatus($data['student_id'], $data['module_id'], $data['academic_year']);
+
+        return response()->json([
+            'message' => 'Validation du module calculée.',
+            'status' => $status,
+        ]);
+    }
+
+    public function calculateSemesterCompensation(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'student_id' => ['required', 'exists:students,id'],
+            'semester' => ['required', 'integer', 'min:1', 'max:12'],
+            'academic_year' => ['required', 'string', 'max:20'],
+        ]);
+
+        $service = new \App\Services\MoroccanAcademicService();
+        $result = $service->calculateSemesterCompensation($data['student_id'], $data['semester'], $data['academic_year']);
+
+        return response()->json([
+            'message' => 'Compensation du semestre calculée.',
+            'result' => $result,
+        ]);
+    }
 }
