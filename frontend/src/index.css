@@ -1,0 +1,266 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ */
+/*  Learnova design tokens                                            */
+/*  navy #15253b · iris #6144e2 · sky #329ef4                         */
+/* ------------------------------------------------------------------ */
+@theme {
+  --font-sans: "Poppins", "Inter", system-ui, -apple-system, sans-serif;
+  --font-display: "Poppins", "Sora", "Inter", system-ui, sans-serif;
+
+  /* Primary brand — sky blue family */
+  --color-brand-50: #ecf6ff;
+  --color-brand-100: #d5ecff;
+  --color-brand-200: #b4ddff;
+  --color-brand-300: #82c8ff;
+  --color-brand-400: #48a9fb;
+  --color-brand-500: #329ef4;
+  --color-brand-600: #1a7fd6;
+  --color-brand-700: #1665ad;
+  --color-brand-800: #17568c;
+  --color-brand-900: #184a74;
+
+  /* Iris — violet accent */
+  --color-iris-50: #efecfd;
+  --color-iris-100: #e0daFB;
+  --color-iris-200: #c6bbf8;
+  --color-iris-300: #a593f2;
+  --color-iris-400: #8468ea;
+  --color-iris-500: #6144e2;
+  --color-iris-600: #4f31c9;
+  --color-iris-700: #4127a3;
+  --color-iris-800: #372284;
+  --color-iris-900: #2f2069;
+
+  /* Ink — deep navy */
+  --color-ink-700: #24405f;
+  --color-ink-800: #1b304a;
+  --color-ink-900: #15253b;
+  --color-ink-950: #0d1826;
+}
+
+:root {
+  color-scheme: light;
+
+  --grad-brand: linear-gradient(120deg, #6144e2 0%, #329ef4 100%);
+  --grad-brand-soft: linear-gradient(120deg, #6144e2 0%, #329ef4 60%, #48a9fb 100%);
+  --grad-night: linear-gradient(160deg, #15253b 0%, #0d1826 100%);
+  --shadow-soft: 0 10px 30px -12px rgba(21, 37, 59, 0.18);
+  --shadow-lift: 0 22px 48px -20px rgba(21, 37, 59, 0.35);
+  --shadow-glow: 0 0 0 1px rgba(97, 68, 226, 0.25), 0 18px 40px -16px rgba(97, 68, 226, 0.45);
+
+  /* ---- App-shell design tokens (used by folder components) ---- */
+  --iris: #6144e2;
+  --sky: #329ef4;
+  --navy: #15253b;
+
+  --app-bg: #f4f6fb;
+  --surface: #ffffff;
+  --surface-2: #f8f9fd;
+  --line: #e7eaf3;
+  --text: #15253b;
+  --text-muted: #64708a;
+
+  --sidebar-w: 268px;
+  --sidebar-w-collapsed: 84px;
+  --navbar-h: 72px;
+  --radius: 16px;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --shell-shadow: 0 8px 30px -14px rgba(21, 37, 59, 0.16);
+}
+
+/* Direction-aware helpers so the shell mirrors cleanly for Arabic */
+[dir="rtl"] {
+  direction: rtl;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: #f6f7fb;
+  color: #1f2430;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Reusable native-CSS building blocks                               */
+/* ------------------------------------------------------------------ */
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.text-gradient {
+  background: var(--grad-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.bg-grad-brand {
+  background-image: var(--grad-brand);
+}
+
+.bg-night {
+  background-image: var(--grad-night);
+}
+
+/* Animated aurora blobs used on hero / CTA backgrounds */
+.aurora {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(80px);
+  opacity: 0.55;
+  pointer-events: none;
+  will-change: transform;
+}
+
+@keyframes aurora-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -28px, 0) scale(1.08);
+  }
+}
+
+.aurora-anim {
+  animation: aurora-float 12s ease-in-out infinite;
+}
+
+/* Fine dotted grid backdrop */
+.bg-dotgrid {
+  background-image: radial-gradient(rgba(21, 37, 59, 0.08) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.bg-dotgrid-light {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.09) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+
+/* Gradient hairline border via mask trick */
+.ring-grad {
+  position: relative;
+}
+.ring-grad::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--grad-brand);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Underline-reveal link (no scale on hover, per design brief) */
+.link-underline {
+  position: relative;
+}
+.link-underline::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -3px;
+  height: 2px;
+  width: 100%;
+  background: var(--grad-brand);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.link-underline:hover::after {
+  transform: scaleX(1);
+}
+
+/* Marquee for the subjects strip */
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee 32s linear infinite;
+}
+
+/* Shine sweep on primary buttons (translate, not scale) */
+.btn-shine {
+  position: relative;
+  overflow: hidden;
+}
+.btn-shine::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -120%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(
+    100deg,
+    transparent,
+    rgba(255, 255, 255, 0.35),
+    transparent
+  );
+  transform: skewX(-18deg);
+  transition: left 0.6s ease;
+}
+.btn-shine:hover::after {
+  left: 130%;
+}
+
+/* Elements revealed by GSAP ScrollTrigger start hidden to avoid flash */
+.reveal-init {
+  opacity: 0;
+  transform: translateY(28px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora-anim,
+  .marquee-track {
+    animation: none;
+  }
+  .reveal-init {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+::selection {
+  background: rgba(97, 68, 226, 0.2);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #c7ccd6;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #6144e2;
+  background-clip: content-box;
+}

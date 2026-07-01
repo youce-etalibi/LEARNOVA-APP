@@ -1,0 +1,84 @@
+.shell {
+  display: flex;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--app-bg);
+}
+
+/* ---- Sidebar wrapper (fixed drawer on mobile, static column on desktop) ---- */
+.shell__sidebar {
+  flex: none;
+  height: 100%;
+  z-index: 50;
+}
+
+/* ---- Main column ---- */
+.shell__main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+.shell__content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+}
+.shell__content-inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 26px clamp(16px, 3vw, 40px) 48px;
+  animation: shell-fade 0.42s var(--ease) both;
+}
+
+@keyframes shell-fade {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- Mobile scrim ---- */
+.shell__scrim {
+  position: fixed;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: rgba(13, 24, 38, 0.5);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s var(--ease);
+  z-index: 45;
+}
+
+/* ---- Desktop ---- */
+@media (min-width: 1025px) {
+  .shell__scrim { display: none; }
+}
+
+/* ---- Mobile / tablet: sidebar becomes an off-canvas drawer ---- */
+@media (max-width: 1024px) {
+  .shell__sidebar {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-start: 0;
+    transform: translateX(-105%);
+    transition: transform 0.34s var(--ease);
+    box-shadow: var(--shadow-lift);
+  }
+  [dir="rtl"] .shell__sidebar { transform: translateX(105%); }
+
+  .shell.is-mobile-open .shell__sidebar { transform: translateX(0); }
+  .shell.is-mobile-open .shell__scrim { opacity: 1; pointer-events: auto; }
+
+  /* On mobile the drawer is always full width regardless of collapse state */
+  .shell.is-collapsed .shell__sidebar .sidebar { width: var(--sidebar-w); min-width: var(--sidebar-w); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell__content-inner { animation: none; }
+  .shell__sidebar, .shell__scrim { transition: none; }
+}
