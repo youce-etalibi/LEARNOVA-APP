@@ -503,6 +503,9 @@ export default function CourseDetail() {
   const totalMinutes = allLessons.reduce((sum, l) => sum + (l.duration_minutes || 0), 0)
   const progress = enrollment ? Math.min(100, Math.round(Number(enrollment.progress_percent) || 0)) : null
   const isDraft = course?.status !== 'published'
+  const coursePromotions = course?.promotions && course.promotions.length > 0
+    ? course.promotions
+    : (allPromotionsData ?? [])
   const [from, to] = COVERS[(course?.id ?? 0) % COVERS.length]
   const level = LEVELS[course?.level] || LEVELS.beginner
 
@@ -1144,6 +1147,8 @@ export default function CourseDetail() {
                                 const LIcon = lt.icon
                                 const done = completedIds.has(lesson.id)
                                 const accessible = canSee(section)
+                                const quiz = lesson.quizzes?.[0] || null
+
                                 return (
                                   <li
                                     key={lesson.id}
@@ -1168,7 +1173,27 @@ export default function CourseDetail() {
 
                                     <button
                                       type="button"
-                                      onClick={() => accessible && setViewingLesson({ lesson, section })}
+                                      onClick={() => {
+                                        if (!accessible) return
+                                        if (lesson.type === 'quiz' && quiz) {
+                                          if (isProfessor) {
+                                            setSelectedQuizId(quiz.id)
+                                            setManageQuizOpen(true)
+                                          } else if (isStudent && enrolled) {
+                                            const attempts = data?.quizAttempts ?? []
+                                            const quizAttempt = attempts.find(a => a.quiz_id === quiz.id)
+                                            if (quizAttempt) {
+                                              setReviewAttemptId(quizAttempt.id)
+                                              setQuizResults({ score: quizAttempt.score, attempt: quizAttempt })
+                                              setTakeQuizOpen(true)
+                                            } else {
+                                              startQuizAttempt.mutate(quiz.id)
+                                            }
+                                          }
+                                        } else {
+                                          setViewingLesson({ lesson, section })
+                                        }
+                                      }}
                                       disabled={!accessible}
                                       className={`min-w-0 flex-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-brand-200 ${accessible ? 'cursor-pointer' : 'cursor-default'}`}
                                     >
@@ -1182,6 +1207,67 @@ export default function CourseDetail() {
                                       {lesson.duration_minutes > 0 && (
                                         <span className="text-xs text-slate-400">{lesson.duration_minutes} min</span>
                                       )}
+
+                                      {/* Quiz Shortcuts */}
+                                      {lesson.type === 'quiz' && quiz && (
+                                        <div className="flex items-center gap-1 mr-1">
+                                          {isProfessor && (
+                                            <Button
+                                              variant="secondary"
+                                              className="h-6 px-2 text-[10px] font-bold"
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                setSelectedQuizId(quiz.id)
+                                                setSelectedPromotionId('')
+                                                setSelectedStudentId('')
+                                                setQuizGradingOpen(true)
+                                              }}
+                                            >
+                                              📊 Notes
+                                            </Button>
+                                          )}
+                                          {isStudent && enrolled && (() => {
+                                            const attempts = data?.quizAttempts ?? []
+                                            const quizAttempt = attempts.find(a => a.quiz_id === quiz.id)
+                                            if (quizAttempt) {
+                                              return (
+                                                <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 text-[10px] py-0.5 px-1.5 font-bold">
+                                                  Score: {quizAttempt.score}/20
+                                                </Badge>
+                                              )
+                                            }
+                                            return (
+                                              <Badge className="bg-amber-50 text-amber-700 border-amber-100 text-[10px] py-0.5 px-1.5 font-bold">
+                                                À faire
+                                              </Badge>
+                                            )
+                                          })()}
+                                        </div>
+                                      )}
+
+                                      {isProfessor && lesson.type === 'quiz' && !quiz && (
+                                        <Button
+                                          variant="secondary"
+                                          className="h-6 px-2 text-[10px] font-bold text-blue-600 hover:text-blue-800 mr-1"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            setCreatingQuizForLessonId(lesson.id)
+                                            createQuiz.mutate({
+                                              lessonId: lesson.id,
+                                              payload: {
+                                                title: `Quiz - ${lesson.title}`,
+                                                duration_minutes: 20,
+                                                attempts_allowed: 1,
+                                                passing_grade: 10
+                                              }
+                                            })
+                                          }}
+                                          disabled={createQuiz.isPending && creatingQuizForLessonId === lesson.id}
+                                        >
+                                          {createQuiz.isPending && creatingQuizForLessonId === lesson.id ? '...' : '+ Quiz'}
+                                        </Button>
+                                      )}
+
                                       {canWrite && (
                                         <span className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/lesson:opacity-100">
                                           <HoverAction label="Modifier la leçon" onClick={() => setLessonModal({ section, lesson })}><Pencil size={13} /></HoverAction>
