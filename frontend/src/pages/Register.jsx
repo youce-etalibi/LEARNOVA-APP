@@ -44,7 +44,7 @@ export default function Register() {
       <p className="mt-2 text-slate-500">Accès gratuit au catalogue en auto-formation.</p>
 
       <div className="mt-8">
-        <GoogleButton label="S'inscrire avec Google" />
+        <GoogleButton label="S'inscrire avec Google" onError={setError} />
       </div>
 
       <div className="my-6 flex items-center gap-4 text-xs font-medium uppercase tracking-wider text-slate-400">

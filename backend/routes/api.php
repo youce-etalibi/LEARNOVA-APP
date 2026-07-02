@@ -36,7 +36,8 @@ Route::prefix('auth')->group(function () {
     Route::post('login', [AuthController::class, 'login']);
     Route::post('register', [AuthController::class, 'register']); // auto-formation learners
 
-    // Google OAuth (Laravel Socialite) — set GOOGLE_CLIENT_ID/SECRET in .env
+    // Google OAuth — set GOOGLE_CLIENT_ID/SECRET in .env
+    Route::post('google', [GoogleAuthController::class, 'loginWithToken']); // popup flow (@react-oauth/google)
     Route::get('google/redirect', [GoogleAuthController::class, 'redirect']);
     Route::get('google/callback', [GoogleAuthController::class, 'callback']);
 
@@ -51,6 +52,7 @@ Route::prefix('auth')->group(function () {
 Route::get('courses', [CourseController::class, 'index']);
 Route::get('courses/{course}', [CourseController::class, 'show']);
 Route::get('announcements', [AnnouncementController::class, 'index']);
+Route::get('announcements/{announcement}', [AnnouncementController::class, 'show']);
 
 /*
 |--------------------------------------------------------------------------
@@ -63,11 +65,14 @@ Route::middleware('auth:api')->group(function () {
     // Profile (any authenticated user)
     Route::put('profile', [ProfileController::class, 'update']);
     Route::put('profile/password', [ProfileController::class, 'changePassword']);
+    Route::post('profile/avatar', [ProfileController::class, 'uploadAvatar']);
+    Route::delete('profile/avatar', [ProfileController::class, 'deleteAvatar']);
 
     // E-learning (any authenticated user can enroll/learn)
     Route::get('my-courses', [CourseController::class, 'myCourses']);
     Route::post('courses/{course}/enroll', [CourseController::class, 'enroll']);
     Route::post('lessons/{lesson}/progress', [LessonProgressController::class, 'updateProgress']);
+    Route::post('lessons/{lesson}/toggle-complete', [\App\Http\Controllers\Api\CourseContentController::class, 'toggleComplete']);
     Route::get('quizzes/{quiz}', [QuizController::class, 'show']);
     Route::get('quiz-attempts/{attempt}/review', [QuizController::class, 'review']);
 
@@ -97,6 +102,11 @@ Route::middleware('auth:api')->group(function () {
         Route::get('departments/{department}', [DepartmentController::class, 'show']);
         Route::get('rooms', [RoomController::class, 'index']);
         Route::get('rooms/{room}', [RoomController::class, 'show']);
+
+        // Lightweight professors directory (for planning forms)
+        Route::get('professors', fn () => response()->json(
+            \App\Models\Professor::with('user:id,name')->get(['id', 'user_id', 'speciality'])
+        ));
     });
 
     /*
@@ -155,8 +165,15 @@ Route::middleware('auth:api')->group(function () {
         Route::post('courses', [CourseController::class, 'store']);
         Route::put('courses/{course}', [CourseController::class, 'update']);
         Route::delete('courses/{course}', [CourseController::class, 'destroy']);
-        Route::post('courses/{course}/sections', [CourseController::class, 'storeSection']);
-        Route::post('sections/{section}/lessons', [CourseController::class, 'storeLesson']);
+
+        // Course content authoring (sections & lessons)
+        Route::post('courses/{course}/sections', [\App\Http\Controllers\Api\CourseContentController::class, 'storeSection']);
+        Route::put('sections/{section}', [\App\Http\Controllers\Api\CourseContentController::class, 'updateSection']);
+        Route::delete('sections/{section}', [\App\Http\Controllers\Api\CourseContentController::class, 'destroySection']);
+        Route::post('sections/{section}/lessons', [\App\Http\Controllers\Api\CourseContentController::class, 'storeLesson']);
+        Route::put('lessons/{lesson}', [\App\Http\Controllers\Api\CourseContentController::class, 'updateLesson']);
+        Route::delete('lessons/{lesson}', [\App\Http\Controllers\Api\CourseContentController::class, 'destroyLesson']);
+
         Route::post('lessons/{lesson}/quizzes', [CourseController::class, 'storeQuiz']);
         Route::post('courses/{course}/assignments', [CourseController::class, 'storeAssignment']);
 

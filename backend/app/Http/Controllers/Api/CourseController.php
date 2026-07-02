@@ -64,13 +64,21 @@ class CourseController extends Controller
 
     public function show(Course $course): JsonResponse
     {
-        $course->load('sections.lessons.quizzes', 'professor.user:id,name', 'module:id,name', 'promotions');
+        $course->load('sections.lessons.quizzes', 'professor.user:id,name', 'module:id,name', 'promotions')
+            ->loadCount('enrollments');
 
         $user = auth('api')->user();
         $enrollment = null;
+        $completedLessonIds = [];
         if ($user) {
             $enrollment = CourseEnrollment::where('user_id', $user->id)
                 ->where('course_id', $course->id)->first();
+
+            if ($enrollment) {
+                $completedLessonIds = \App\Models\LessonProgress::where('enrollment_id', $enrollment->id)
+                    ->where('status', 'completed')
+                    ->pluck('lesson_id');
+            }
         }
 
         // Fetch assignments for the module of this course
@@ -102,6 +110,7 @@ class CourseController extends Controller
             'enrollment' => $enrollment,
             'assignments' => $assignments,
             'quizAttempts' => $quizAttempts,
+            'completed_lesson_ids' => $completedLessonIds,
         ]);
     }
 

@@ -234,6 +234,22 @@ body {
   transform: translateY(28px);
 }
 
+/* Micro-animations for in-app UI (modals, overlays, rows) */
+@keyframes ui-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes ui-pop-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+.anim-fade-in {
+  animation: ui-fade-in 0.18s ease-out both;
+}
+.anim-pop-in {
+  animation: ui-pop-in 0.24s var(--ease) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .aurora-anim,
   .marquee-track {
@@ -242,6 +258,10 @@ body {
   .reveal-init {
     opacity: 1;
     transform: none;
+  }
+  .anim-fade-in,
+  .anim-pop-in {
+    animation: none;
   }
 }
 

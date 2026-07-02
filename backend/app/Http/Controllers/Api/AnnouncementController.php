@@ -9,17 +9,33 @@ use Illuminate\Http\Request;
 
 class AnnouncementController extends Controller
 {
+    private const AUTHOR_ROLES = ['SuperAdmin', 'Admin', 'ManagementPedagogique', 'Professor'];
+
     public function index(Request $request): JsonResponse
     {
-        $query = Announcement::with('author:id,name')
-            ->whereNotNull('published_at');
+        $user = auth('api')->user();
+        $canModerate = $user && $user->hasAnyRole(self::AUTHOR_ROLES);
+
+        $query = Announcement::with('author:id,name');
+
+        // Drafts are only listed for authors/moderators who explicitly ask.
+        if (! ($canModerate && $request->boolean('include_drafts'))) {
+            $query->whereNotNull('published_at');
+        }
 
         if ($type = $request->query('target_type')) {
             $query->where('target_type', $type);
         }
 
+        if ($search = $request->query('search')) {
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'ilike', "%{$search}%")
+                    ->orWhere('content', 'ilike', "%{$search}%");
+            });
+        }
+
         return response()->json(
-            $query->orderByDesc('pinned')->orderByDesc('published_at')
+            $query->orderByDesc('pinned')->orderByDesc('published_at')->orderByDesc('created_at')
                 ->paginate($request->integer('per_page', 15))
         );
     }
@@ -50,6 +66,11 @@ class AnnouncementController extends Controller
 
     public function show(Announcement $announcement): JsonResponse
     {
+        if (! $announcement->published_at) {
+            $user = auth('api')->user();
+            abort_unless($user && $user->hasAnyRole(self::AUTHOR_ROLES), 404);
+        }
+
         return response()->json($announcement->load('author:id,name'));
     }
 
@@ -61,11 +82,20 @@ class AnnouncementController extends Controller
             'target_type' => ['sometimes', 'in:all,promotion,department,module'],
             'target_id' => ['nullable', 'integer'],
             'pinned' => ['boolean'],
+            'publish' => ['sometimes', 'boolean'],
         ]);
 
-        $announcement->update($data);
+        // Publish/unpublish without touching the original publication date.
+        if (array_key_exists('publish', $data)) {
+            $announcement->published_at = $data['publish']
+                ? ($announcement->published_at ?? now())
+                : null;
+            unset($data['publish']);
+        }
 
-        return response()->json($announcement);
+        $announcement->fill($data)->save();
+
+        return response()->json($announcement->load('author:id,name'));
     }
 
     public function destroy(Announcement $announcement): JsonResponse

@@ -1,589 +1,589 @@
-import { useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
+import {
+  CalendarDays, ChevronLeft, ChevronRight, Plus, Pencil, Trash2,
+  CheckCircle2, XCircle, RotateCcw, Clock, DoorOpen, GraduationCap,
+  Video, Layers, User,
+} from 'lucide-react'
 import api from '../lib/api'
 import { useAuthStore } from '../store/auth'
-import { Card, Spinner, EmptyState, PageHeader, StatusBadge, Badge, Button, Input, Select, Modal } from '../components/ui'
+import {
+  Card, Button, Input, Select, Modal, ConfirmDialog, Spinner, EmptyState, Badge, StatusBadge,
+} from '../components/ui'
 
-const TYPE_COLORS = {
-  CM: 'bg-brand-50 text-brand-700 border-brand-100',
-  TD: 'bg-violet-50 text-violet-700 border-violet-100',
-  TP: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-  Online: 'bg-slate-50 text-slate-700 border-slate-200',
+/* ------------------------------------------------------------------ */
+/*  Types de séance                                                   */
+/* ------------------------------------------------------------------ */
+const TYPES = {
+  CM: { label: 'Cours magistral', chip: 'bg-brand-100 text-brand-700', rail: 'bg-brand-500' },
+  TD: { label: 'Travaux dirigés', chip: 'bg-iris-100 text-iris-700', rail: 'bg-iris-500' },
+  TP: { label: 'Travaux pratiques', chip: 'bg-teal-100 text-teal-700', rail: 'bg-teal-500' },
+  Online: { label: 'En ligne', chip: 'bg-slate-200 text-slate-700', rail: 'bg-slate-400' },
 }
 
+const EMPTY_FORM = {
+  module_id: '', professor_id: '', promotion_id: '', room_id: '',
+  type: 'CM', date: '', start_time: '08:30', end_time: '10:30',
+}
+
+/* ---- Helpers date (heure locale, pas d'UTC) ---- */
+const isoDate = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+function mondayOf(date) {
+  const d = new Date(date)
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+  return d
+}
+
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x }
+
+const dayLabel = (d) => new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }).format(d)
+const shortRange = (a, b) =>
+  `${new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' }).format(a)} — ${new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }).format(b)}`
+
+function durationLabel(start, end) {
+  if (!start || !end) return null
+  const [h1, m1] = start.split(':').map(Number)
+  const [h2, m2] = end.split(':').map(Number)
+  const mins = h2 * 60 + m2 - (h1 * 60 + m1)
+  if (mins <= 0) return null
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return h ? `${h} h${m ? ` ${String(m).padStart(2, '0')}` : ''}` : `${m} min`
+}
+
+/* ------------------------------------------------------------------ */
+/*  Page                                                              */
+/* ------------------------------------------------------------------ */
 export default function Seances() {
   const qc = useQueryClient()
-  const user = useAuthStore((s) => s.user)
+  const reduce = useReducedMotion()
   const roles = useAuthStore((s) => s.roles)
-  
-  const isStudent = roles.includes('Student')
-  const isProfessor = roles.includes('Professor')
-  const isAdmin = roles.some(r => ['SuperAdmin', 'Admin', 'ManagementPedagogique'].includes(r))
-  const canManage = isAdmin || isProfessor
+  const canManage = roles.some((r) => ['SuperAdmin', 'Admin', 'ManagementPedagogique'].includes(r))
+  const canStatus = canManage || roles.includes('Professor')
 
-  // Active date state to determine week
-  const [activeDate, setActiveDate] = useState(new Date())
-  
-  // Modal states for creating/editing seances
-  const [modalOpen, setModalOpen] = useState(false)
-  const [selectedSeanceId, setSelectedSeanceId] = useState(null)
+  const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()))
+  const weekEnd = addDays(weekStart, 6)
 
-  // Attendance sheet states
-  const [attendanceModalOpen, setAttendanceModalOpen] = useState(false)
-  const [targetSeanceForAttendance, setTargetSeanceForAttendance] = useState(null)
-  const [attendancePromotionId, setAttendancePromotionId] = useState(null)
-  const [attendanceRecords, setAttendanceRecords] = useState({})
-  
-  // Form states for seance builder
-  const [moduleId, setModuleId] = useState('')
-  const [professorId, setProfessorId] = useState('')
-  const [promotionId, setPromotionId] = useState('')
-  const [roomId, setRoomId] = useState('')
-  const [type, setType] = useState('CM')
-  const [date, setDate] = useState('')
-  const [startTime, setStartTime] = useState('09:00')
-  const [endTime, setEndTime] = useState('11:00')
-  const [status, setStatus] = useState('scheduled')
+  const [formOpen, setFormOpen] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [viewing, setViewing] = useState(null)
+  const [deleting, setDeleting] = useState(null)
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [error, setError] = useState(null)
 
-  // Calculate Monday of active week
-  const getMonday = (d) => {
-    const current = new Date(d)
-    const day = current.getDay()
-    const diff = current.getDate() - day + (day === 0 ? -6 : 1)
-    const monday = new Date(current.setDate(diff))
-    monday.setHours(0, 0, 0, 0)
-    return monday
-  }
-
-  const monday = getMonday(activeDate)
-  const saturday = new Date(monday)
-  saturday.setDate(monday.getDate() + 5)
-  saturday.setHours(23, 59, 59, 999)
-
-  const formatQueryDate = (d) => d.toISOString().slice(0, 10)
-
-  // Fetch timetable slots for the active week
-  const { data: seancesList, isLoading } = useQuery({
-    queryKey: ['seances', formatQueryDate(monday), formatQueryDate(saturday)],
-    queryFn: () => api.get('/seances', {
-      params: {
-        from: formatQueryDate(monday),
-        to: formatQueryDate(saturday),
-      }
-    }).then((r) => r.data),
+  const { data, isLoading } = useQuery({
+    queryKey: ['seances', isoDate(weekStart)],
+    queryFn: () =>
+      api.get('/seances', { params: { from: isoDate(weekStart), to: isoDate(weekEnd) } }).then((r) => r.data),
   })
 
-  // Eager load data for form dropdowns
-  const { data: promotionsList } = useQuery({
-    queryKey: ['promotions-form'],
-    queryFn: () => api.get('/promotions?per_page=100').then((r) => r.data?.data ?? []),
-    enabled: isAdmin,
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['seances'] })
+
+  const save = useMutation({
+    mutationFn: (payload) =>
+      editing ? api.put(`/seances/${editing.id}`, payload) : api.post('/seances', payload),
+    onSuccess: () => { invalidate(); closeForm() },
+    onError: (err) => {
+      const errors = err.response?.data?.errors
+      setError(errors ? Object.values(errors)[0][0] : err.response?.data?.message || 'Une erreur est survenue.')
+    },
   })
 
-  const { data: modulesList } = useQuery({
-    queryKey: ['modules-form'],
-    queryFn: () => api.get('/modules?per_page=100').then((r) => r.data?.data ?? []),
-    enabled: isAdmin,
-  })
-
-  const { data: roomsList } = useQuery({
-    queryKey: ['rooms-form'],
-    queryFn: () => api.get('/rooms?per_page=100').then((r) => r.data?.data ?? []),
-    enabled: isAdmin,
-  })
-
-  const { data: professorsList } = useQuery({
-    queryKey: ['professors-form'],
-    queryFn: () => api.get('/users?role=Professor&per_page=100').then((r) => r.data?.data ?? []),
-    enabled: isAdmin,
-  })
-
-  // Attendance specific queries
-  const { data: selectedPromotionData } = useQuery({
-    queryKey: ['promotion-detail-attendance', attendancePromotionId],
-    queryFn: () => api.get(`/promotions/${attendancePromotionId}`).then((r) => r.data),
-    enabled: !!attendancePromotionId,
-  })
-
-  const { data: existingAbsences } = useQuery({
-    queryKey: ['seance-absences', targetSeanceForAttendance?.id],
-    queryFn: () => api.get(`/absences`, { params: { seance_id: targetSeanceForAttendance?.id } }).then((r) => r.data?.data ?? []),
-    enabled: !!targetSeanceForAttendance?.id,
-  })
-
-  // Initialize and synchronize attendance checklist
-  useEffect(() => {
-    if (selectedPromotionData?.students) {
-      const records = {}
-      selectedPromotionData.students.forEach(s => {
-        const existing = existingAbsences?.find(a => a.student_id === s.id)
-        records[s.id] = existing ? existing.status : 'present'
-      })
-      setAttendanceRecords(records)
-    }
-  }, [selectedPromotionData, existingAbsences, attendanceModalOpen])
-
-  // Mutations
-  const updateStatus = useMutation({
+  const setStatus = useMutation({
     mutationFn: ({ id, status }) => api.patch(`/seances/${id}/status`, { status }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['seances'] }),
-  })
-
-  const saveAttendance = useMutation({
-    mutationFn: (recordsPayload) => api.post('/absences/bulk', recordsPayload),
-    onSuccess: () => {
-      updateStatus.mutate({ id: targetSeanceForAttendance.id, status: 'done' })
-      setAttendanceModalOpen(false)
-      setTargetSeanceForAttendance(null)
-      setAttendancePromotionId(null)
-      alert('Présences et absences enregistrées avec succès.')
+    onSuccess: (r) => {
+      invalidate()
+      setViewing((v) => (v && v.id === r.data.id ? { ...v, status: r.data.status } : v))
     },
-    onError: (err) => alert(err.response?.data?.error ?? 'Erreur de sauvegarde des présences.')
   })
 
-  const createSeance = useMutation({
-    mutationFn: (payload) => api.post('/seances', payload),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['seances'] })
-      setModalOpen(false)
-      resetForm()
-    },
-    onError: (err) => alert(err.response?.data?.error ?? 'Erreur lors de la création.')
-  })
-
-  const editSeance = useMutation({
-    mutationFn: ({ id, payload }) => api.put(`/seances/${id}`, payload),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['seances'] })
-      setModalOpen(false)
-      resetForm()
-    },
-    onError: (err) => alert(err.response?.data?.error ?? 'Erreur lors de la modification.')
-  })
-
-  const deleteSeance = useMutation({
+  const remove = useMutation({
     mutationFn: (id) => api.delete(`/seances/${id}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['seances'] })
-      alert('Séance supprimée avec succès.')
-    },
+    onSuccess: () => { invalidate(); setDeleting(null); setViewing(null) },
   })
 
-  const seances = Array.isArray(seancesList) ? seancesList : []
+  const seances = useMemo(() => (Array.isArray(data) ? data : data?.data ?? []), [data])
 
-  // Generate 6 days of active week
-  const weekDays = []
-  for (let i = 0; i < 6; i++) {
-    const day = new Date(monday)
-    day.setDate(monday.getDate() + i)
-    weekDays.push(day)
+  const byDate = useMemo(() => {
+    const map = {}
+    for (const s of seances) {
+      const key = s.date?.slice(0, 10)
+      ;(map[key] = map[key] || []).push(s)
+    }
+    return map
+  }, [seances])
+
+  /* Lundi → samedi toujours affichés ; dimanche seulement s'il est occupé. */
+  const days = useMemo(() => {
+    const list = [0, 1, 2, 3, 4, 5].map((i) => addDays(weekStart, i))
+    const sunday = addDays(weekStart, 6)
+    if (byDate[isoDate(sunday)]?.length) list.push(sunday)
+    return list
+  }, [weekStart, byDate])
+
+  const active = seances.filter((s) => s.status !== 'cancelled')
+  const totalMinutes = active.reduce((sum, s) => {
+    const [h1, m1] = (s.start_time || '0:0').split(':').map(Number)
+    const [h2, m2] = (s.end_time || '0:0').split(':').map(Number)
+    return sum + Math.max(0, h2 * 60 + m2 - (h1 * 60 + m1))
+  }, 0)
+
+  const stats = [
+    { icon: CalendarDays, label: 'Séances cette semaine', value: seances.length, tone: 'bg-brand-50 text-brand-600' },
+    { icon: Clock, label: 'Heures planifiées', value: `${Math.floor(totalMinutes / 60)} h${totalMinutes % 60 ? ` ${totalMinutes % 60}` : ''}`, tone: 'bg-iris-50 text-iris-600' },
+    { icon: CheckCircle2, label: 'Terminées', value: seances.filter((s) => s.status === 'done').length, tone: 'bg-emerald-50 text-emerald-600' },
+    { icon: XCircle, label: 'Annulées', value: seances.filter((s) => s.status === 'cancelled').length, tone: 'bg-rose-50 text-rose-600' },
+  ]
+
+  const openCreate = (date) => {
+    setEditing(null)
+    setForm({ ...EMPTY_FORM, date: date || isoDate(new Date()) })
+    setError(null)
+    setFormOpen(true)
   }
-
-  const navigateWeek = (direction) => {
-    const next = new Date(activeDate)
-    next.setDate(activeDate.getDate() + direction * 7)
-    setActiveDate(next)
+  const openEdit = (s) => {
+    setEditing(s)
+    setForm({
+      module_id: s.module_id ?? s.module?.id ?? '',
+      professor_id: s.professor_id ?? s.professor?.id ?? '',
+      promotion_id: s.promotion_id ?? s.promotion?.id ?? '',
+      room_id: s.room_id ?? s.room?.id ?? '',
+      type: s.type, date: s.date?.slice(0, 10) ?? '',
+      start_time: s.start_time?.slice(0, 5) ?? '', end_time: s.end_time?.slice(0, 5) ?? '',
+    })
+    setError(null); setViewing(null); setFormOpen(true)
   }
+  const closeForm = () => { setFormOpen(false); setEditing(null); setForm(EMPTY_FORM); setError(null) }
 
-  const resetForm = () => {
-    setSelectedSeanceId(null)
-    setModuleId('')
-    setProfessorId('')
-    setPromotionId('')
-    setRoomId('')
-    setType('CM')
-    setDate('')
-    setStartTime('09:00')
-    setEndTime('11:00')
-    setStatus('scheduled')
-  }
-
-  const handleEditClick = (s) => {
-    setSelectedSeanceId(s.id)
-    setModuleId(s.module_id || '')
-    setProfessorId(s.professor_id || '')
-    setPromotionId(s.promotion_id || '')
-    setRoomId(s.room_id || '')
-    setType(s.type || 'CM')
-    setDate(s.date ? s.date.slice(0, 10) : '')
-    setStartTime(s.start_time ? s.start_time.slice(0, 5) : '09:00')
-    setEndTime(s.end_time ? s.end_time.slice(0, 5) : '11:00')
-    setStatus(s.status || 'scheduled')
-    setModalOpen(true)
-  }
-
-  const handleSubmit = (e) => {
+  const submit = (e) => {
     e.preventDefault()
-    const payload = {
-      module_id: moduleId,
-      professor_id: professorId,
-      promotion_id: promotionId,
-      room_id: roomId || null,
-      type,
-      date,
-      start_time: startTime,
-      end_time: endTime,
-      status
-    }
-
-    if (selectedSeanceId) {
-      editSeance.mutate({ id: selectedSeanceId, payload })
-    } else {
-      createSeance.mutate(payload)
-    }
+    setError(null)
+    save.mutate({
+      module_id: form.module_id, professor_id: form.professor_id, promotion_id: form.promotion_id,
+      room_id: form.type === 'Online' ? null : form.room_id || null,
+      type: form.type, date: form.date,
+      start_time: form.start_time, end_time: form.end_time,
+    })
   }
+
+  const fadeUp = reduce ? {} : {
+    initial: { opacity: 0, y: 10 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, scale: 0.98 },
+    transition: { duration: 0.25, ease: [0.22, 1, 0.36, 1] },
+  }
+
+  const todayIso = isoDate(new Date())
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <PageHeader 
-          title="Emploi du temps" 
-          subtitle="Consultez et gérez le calendrier des cours par semaine." 
-        />
-        {isAdmin && (
-          <Button onClick={() => { resetForm(); setModalOpen(true) }} className="shadow-sm">
-            📅 Programmer une séance
+    <div>
+      {/* ---- En-tête ---- */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-slate-900">Emploi du temps</h1>
+          <p className="mt-1 text-sm text-slate-500">Vos séances programmées, semaine par semaine.</p>
+        </div>
+        {canManage && (
+          <Button onClick={() => openCreate()} className="btn-shine">
+            <Plus size={16} />
+            Nouvelle séance
           </Button>
         )}
       </div>
 
-      {/* Week Navigator */}
-      <Card className="p-4 flex flex-wrap items-center justify-between gap-4 shadow-sm border border-slate-100">
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" className="px-3 py-1.5 text-xs font-semibold" onClick={() => navigateWeek(-1)}>
-            ◀ Sem. précédente
-          </Button>
-          <Button variant="secondary" className="px-3 py-1.5 text-xs font-semibold" onClick={() => setActiveDate(new Date())}>
-            Aujourd'hui
-          </Button>
-          <Button variant="secondary" className="px-3 py-1.5 text-xs font-semibold" onClick={() => navigateWeek(1)}>
-            Sem. suivante ▶
-          </Button>
+      {/* ---- Statistiques ---- */}
+      {!isLoading && (
+        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {stats.map((s) => (
+            <Card key={s.label} className="flex items-center gap-3 px-4 py-3">
+              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${s.tone}`}>
+                <s.icon size={18} />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xl leading-tight font-bold text-slate-900">{s.value}</p>
+                <p className="truncate text-xs text-slate-500">{s.label}</p>
+              </div>
+            </Card>
+          ))}
         </div>
+      )}
 
-        <div className="text-sm font-bold text-slate-800 flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-lg border border-slate-100">
-          📆 Semaine du <span className="text-brand-600">{monday.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</span> au <span className="text-brand-600">{saturday.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+      {/* ---- Navigation de semaine ---- */}
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <div className="flex items-center overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <button
+            type="button"
+            aria-label="Semaine précédente"
+            onClick={() => setWeekStart((w) => addDays(w, -7))}
+            className="cursor-pointer px-2.5 py-2 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <span className="border-x border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 first-letter:uppercase">
+            {shortRange(weekStart, weekEnd)}
+          </span>
+          <button
+            type="button"
+            aria-label="Semaine suivante"
+            onClick={() => setWeekStart((w) => addDays(w, 7))}
+            className="cursor-pointer px-2.5 py-2 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
+          >
+            <ChevronRight size={16} />
+          </button>
         </div>
-      </Card>
+        <Button variant="secondary" size="sm" onClick={() => setWeekStart(mondayOf(new Date()))}>
+          Aujourd'hui
+        </Button>
+      </div>
 
+      {/* ---- Planning ---- */}
       {isLoading ? (
         <Spinner />
       ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-6 gap-4">
-          {weekDays.map((day) => {
-            const formattedDayStr = formatQueryDate(day)
-            const daySessions = seances.filter(s => s.date?.slice(0, 10) === formattedDayStr)
-              .sort((a, b) => a.start_time.localeCompare(b.start_time))
+        <div className="space-y-6">
+          {seances.length === 0 && (
+            <Card>
+              <EmptyState
+                title="Aucune séance cette semaine"
+                hint={canManage ? 'Planifiez une séance ou changez de semaine.' : 'Changez de semaine pour voir vos prochaines séances.'}
+                action={canManage && <Button onClick={() => openCreate()}><Plus size={16} /> Nouvelle séance</Button>}
+              />
+            </Card>
+          )}
 
-            const isToday = formatQueryDate(new Date()) === formattedDayStr
-
+          {seances.length > 0 && days.map((day) => {
+            const key = isoDate(day)
+            const list = (byDate[key] || []).slice().sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''))
+            const isToday = key === todayIso
             return (
-              <div key={formattedDayStr} className="space-y-3 flex flex-col">
-                <div className={`text-center py-2.5 rounded-lg border font-bold text-xs uppercase tracking-wider ${
-                  isToday 
-                    ? 'bg-brand-500 text-white border-brand-600 shadow-sm' 
-                    : 'bg-slate-50 text-slate-500 border-slate-100'
-                }`}>
-                  {day.toLocaleDateString('fr-FR', { weekday: 'short' })} {day.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
-                </div>
-
-                <div className="space-y-3 flex-1 bg-slate-50/50 p-2.5 rounded-xl border border-slate-100/50 min-h-[300px]">
-                  {daySessions.length === 0 ? (
-                    <div className="text-center py-16 text-slate-400 italic text-[11px] font-medium">
-                      Pas de cours
-                    </div>
-                  ) : (
-                    daySessions.map((s) => (
-                      <div 
-                        key={s.id} 
-                        className="bg-white border border-slate-150 rounded-xl p-3.5 space-y-2.5 shadow-sm hover:shadow-md transition relative flex flex-col justify-between"
-                      >
-                        <div className="space-y-1.5">
-                          <div className="flex justify-between items-center gap-1">
-                            <span className="text-xs font-black text-slate-800 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
-                              🕒 {s.start_time?.slice(0, 5)} - {s.end_time?.slice(0, 5)}
-                            </span>
-                            <Badge className={`text-[9px] px-1.5 py-0.5 border ${TYPE_COLORS[s.type] ?? 'bg-slate-100 text-slate-700'}`}>
-                              {s.type}
-                            </Badge>
-                          </div>
-
-                          <h4 className="font-extrabold text-slate-900 text-xs line-clamp-2 leading-tight">
-                            {s.module?.name}
-                          </h4>
-
-                          <div className="text-[10px] text-slate-500 space-y-1">
-                            {isStudent ? (
-                              <p className="font-medium">👨‍🏫 Prof: <span className="font-bold text-slate-700">{s.professor?.user?.name}</span></p>
-                            ) : (
-                              <p className="font-medium">👥 Groupe: <span className="font-bold text-slate-700">{s.promotion?.name}</span></p>
-                            )}
-                            <p className="font-medium">📍 Salle: <span className="font-bold text-slate-700">{s.room?.name || 'En ligne'}</span></p>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col gap-2 pt-2 border-t border-slate-100">
-                          <div className="flex items-center justify-between gap-1.5">
-                            {canManage ? (
-                              <select
-                                value={s.status}
-                                onChange={(e) => {
-                                  const nextStatus = e.target.value
-                                  if (nextStatus === 'done') {
-                                    setTargetSeanceForAttendance(s)
-                                    setAttendancePromotionId(s.promotion_id)
-                                    setAttendanceModalOpen(true)
-                                  } else {
-                                    updateStatus.mutate({ id: s.id, status: nextStatus })
-                                  }
-                                }}
-                                className="rounded border border-slate-200 px-1.5 py-0.5 text-[9px] font-bold text-slate-700 bg-slate-50 flex-1"
-                              >
-                                <option value="scheduled">Planifié</option>
-                                <option value="done">Terminé</option>
-                                <option value="cancelled">Annulé</option>
-                              </select>
-                            ) : (
-                              <StatusBadge status={s.status} className="text-[9px] px-1.5 py-0.5" />
-                            )}
-
-                            {isAdmin && (
-                              <div className="flex gap-0.5">
-                                <button 
-                                  onClick={() => handleEditClick(s)}
-                                  className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-blue-600 transition"
-                                  title="Modifier"
-                                >
-                                  ✏️
-                                </button>
-                                <button 
-                                  onClick={() => {
-                                    if (confirm('Voulez-vous vraiment supprimer cette séance ?')) {
-                                      deleteSeance.mutate(s.id)
-                                    }
-                                  }}
-                                  className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-rose-600 transition"
-                                  title="Supprimer"
-                                >
-                                  🗑️
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                          
-                          {canManage && s.status === 'done' && (
-                            <Button
-                              variant="secondary"
-                              className="text-[9.5px] py-1 px-2.5 font-extrabold w-full text-slate-700 bg-slate-100 hover:bg-slate-200 border-slate-200 rounded-lg flex items-center justify-center gap-1"
-                              onClick={() => {
-                                setTargetSeanceForAttendance(s)
-                                setAttendancePromotionId(s.promotion_id)
-                                setAttendanceModalOpen(true)
-                              }}
-                            >
-                              📝 Feuille d'Absences
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ))
+              <section key={key} aria-label={dayLabel(day)}>
+                <div className="mb-2.5 flex items-center gap-2.5">
+                  <span
+                    className={`flex h-9 w-9 flex-col items-center justify-center rounded-xl text-[10px] font-semibold uppercase leading-none ${
+                      isToday ? 'bg-grad-brand text-white shadow-md' : 'bg-slate-100 text-slate-500'
+                    }`}
+                  >
+                    {new Intl.DateTimeFormat('fr-FR', { weekday: 'short' }).format(day).slice(0, 3)}
+                    <span className="mt-0.5 text-sm font-bold">{day.getDate()}</span>
+                  </span>
+                  <h2 className={`font-display text-sm font-semibold first-letter:uppercase ${isToday ? 'text-brand-700' : 'text-slate-700'}`}>
+                    {dayLabel(day)}
+                    {isToday && <Badge className="ms-2 bg-brand-100 text-brand-700">Aujourd'hui</Badge>}
+                  </h2>
+                  <span className="h-px flex-1 bg-slate-200" aria-hidden="true" />
+                  {canManage && (
+                    <button
+                      type="button"
+                      onClick={() => openCreate(key)}
+                      className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-brand-600 opacity-70 transition-opacity hover:opacity-100"
+                    >
+                      <Plus size={13} /> Ajouter
+                    </button>
                   )}
                 </div>
-              </div>
+
+                {list.length === 0 ? (
+                  <p className="ms-12 border-s-2 border-dotted border-slate-200 ps-4 text-xs text-slate-400">
+                    Journée libre
+                  </p>
+                ) : (
+                  <div className="space-y-2.5">
+                    <AnimatePresence>
+                      {list.map((s) => {
+                        const t = TYPES[s.type] || TYPES.CM
+                        const cancelled = s.status === 'cancelled'
+                        return (
+                          <motion.div key={s.id} layout {...fadeUp}>
+                            <Card
+                              className={`group relative flex cursor-pointer flex-wrap items-center gap-4 overflow-hidden p-4 ps-5 transition-shadow duration-200 hover:shadow-md ${cancelled ? 'opacity-60' : ''}`}
+                              onClick={() => setViewing(s)}
+                            >
+                              <span className={`absolute inset-y-0 left-0 w-1.5 ${t.rail}`} aria-hidden="true" />
+
+                              {/* Heures */}
+                              <div className="w-16 shrink-0 text-center">
+                                <div className="font-display text-sm font-bold text-slate-800">{s.start_time?.slice(0, 5)}</div>
+                                <div className="text-xs text-slate-400">{s.end_time?.slice(0, 5)}</div>
+                                {durationLabel(s.start_time, s.end_time) && (
+                                  <div className="mt-0.5 text-[10px] font-medium text-slate-400">
+                                    {durationLabel(s.start_time, s.end_time)}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Infos */}
+                              <div className="min-w-0 flex-1">
+                                <div className={`font-medium text-slate-900 ${cancelled ? 'line-through' : ''}`}>
+                                  {s.module?.name}
+                                  {s.module?.code && <span className="ms-1.5 font-mono text-xs text-slate-400">{s.module.code}</span>}
+                                </div>
+                                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-500">
+                                  <span className="inline-flex items-center gap-1"><User size={11} /> {s.professor?.user?.name || '—'}</span>
+                                  <span className="inline-flex items-center gap-1">
+                                    {s.type === 'Online' || !s.room ? <Video size={11} /> : <DoorOpen size={11} />}
+                                    {s.room?.name || 'En ligne'}
+                                  </span>
+                                  <span className="inline-flex items-center gap-1"><GraduationCap size={11} /> {s.promotion?.name}</span>
+                                </div>
+                              </div>
+
+                              {/* Badges + actions */}
+                              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                <Badge className={t.chip}>{s.type}</Badge>
+                                <StatusBadge status={s.status} />
+
+                                {canStatus && (
+                                  <span className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+                                    {s.status === 'scheduled' ? (
+                                      <>
+                                        <QuickAction label="Marquer terminée" tone="emerald" onClick={() => setStatus.mutate({ id: s.id, status: 'done' })}>
+                                          <CheckCircle2 size={15} />
+                                        </QuickAction>
+                                        <QuickAction label="Annuler la séance" tone="danger" onClick={() => setStatus.mutate({ id: s.id, status: 'cancelled' })}>
+                                          <XCircle size={15} />
+                                        </QuickAction>
+                                      </>
+                                    ) : (
+                                      <QuickAction label="Replanifier" tone="brand" onClick={() => setStatus.mutate({ id: s.id, status: 'scheduled' })}>
+                                        <RotateCcw size={15} />
+                                      </QuickAction>
+                                    )}
+                                    {canManage && (
+                                      <>
+                                        <QuickAction label="Modifier" tone="brand" onClick={() => openEdit(s)}><Pencil size={15} /></QuickAction>
+                                        <QuickAction label="Supprimer" tone="danger" onClick={() => setDeleting(s)}><Trash2 size={15} /></QuickAction>
+                                      </>
+                                    )}
+                                  </span>
+                                )}
+                              </div>
+                            </Card>
+                          </motion.div>
+                        )
+                      })}
+                    </AnimatePresence>
+                  </div>
+                )}
+              </section>
             )
           })}
         </div>
       )}
 
-      {/* Attendance Sheet (Feuille d'émargement) Modal */}
-      <Modal
-        open={attendanceModalOpen}
-        onClose={() => {
-          setAttendanceModalOpen(false)
-          setTargetSeanceForAttendance(null)
-          setAttendancePromotionId(null)
-        }}
-        title={`Feuille d'Absences - ${targetSeanceForAttendance?.module?.name}`}
-      >
-        <div className="space-y-4">
-          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-100 text-xs text-slate-500 space-y-1">
-            <p><strong>Séance :</strong> Le {targetSeanceForAttendance?.date && new Date(targetSeanceForAttendance.date).toLocaleDateString('fr-FR')} de {targetSeanceForAttendance?.start_time?.slice(0, 5)} à {targetSeanceForAttendance?.end_time?.slice(0, 5)}</p>
-            <p><strong>Classe Groupe (Promotion) :</strong> {targetSeanceForAttendance?.promotion?.name}</p>
-            <p className="text-slate-400 italic font-medium pt-1">Sélectionnez le statut de présence de chaque étudiant. Par défaut, tous sont marqués présents.</p>
+      {/* ---- Modale détail (show) ---- */}
+      <SeanceDetail
+        seance={viewing}
+        onClose={() => setViewing(null)}
+        canManage={canManage}
+        canStatus={canStatus}
+        onEdit={() => viewing && openEdit(viewing)}
+        onDelete={() => setDeleting(viewing)}
+        onStatus={(status) => viewing && setStatus.mutate({ id: viewing.id, status })}
+      />
+
+      {/* ---- Modale création / édition ---- */}
+      <Modal open={formOpen} onClose={closeForm} size="xl" title={editing ? 'Modifier la séance' : 'Nouvelle séance'}>
+        <form onSubmit={submit} className="space-y-4">
+          {error && (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700" role="alert">
+              {error}
+            </div>
+          )}
+
+          {/* Type */}
+          <div>
+            <span className="mb-1.5 block text-sm font-medium text-slate-700">Type de séance</span>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Type de séance">
+              {Object.entries(TYPES).map(([value, t]) => {
+                const isActive = form.type === value
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={isActive}
+                    onClick={() => setForm({ ...form, type: value })}
+                    className={`cursor-pointer rounded-xl border px-3 py-2.5 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-brand-200 ${
+                      isActive
+                        ? 'border-brand-500 bg-brand-50 text-brand-700 ring-1 ring-brand-500'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="font-bold">{value}</span>
+                    <span className="mt-0.5 block text-[10px] text-slate-500">{t.label}</span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
-          <div className="max-h-[350px] overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-100">
-            {selectedPromotionData?.students?.length === 0 ? (
-              <p className="text-center py-8 text-xs text-slate-400 italic">Aucun étudiant dans cette promotion.</p>
-            ) : (
-              selectedPromotionData?.students?.map((st) => {
-                const currentStatus = attendanceRecords[st.id] || 'present'
-                return (
-                  <div key={st.id} className="p-3 flex justify-between items-center hover:bg-slate-50/50 transition">
-                    <div>
-                      <p className="text-sm font-bold text-slate-850">{st.user?.name}</p>
-                      <p className="text-xs text-slate-400">{st.user?.email}</p>
-                    </div>
-
-                    <div className="flex gap-1">
-                      {[
-                        { key: 'present', label: 'Présent', color: 'bg-emerald-500 text-white border-emerald-500', defaultColor: 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100' },
-                        { key: 'absent', label: 'Absent', color: 'bg-rose-500 text-white border-rose-500', defaultColor: 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100' },
-                        { key: 'late', label: 'En retard', color: 'bg-amber-500 text-white border-amber-500', defaultColor: 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100' }
-                      ].map((btn) => (
-                        <button
-                          key={btn.key}
-                          type="button"
-                          onClick={() => {
-                            setAttendanceRecords(prev => ({ ...prev, [st.id]: btn.key }))
-                          }}
-                          className={`text-xs px-2.5 py-1 rounded-lg border font-bold transition ${
-                            currentStatus === btn.key ? btn.color : btn.defaultColor
-                          }`}
-                        >
-                          {btn.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )
-              })
+          <div className="grid gap-4 sm:grid-cols-2">
+            <OptionPicker label="Module" endpoint="/modules" value={form.module_id} required
+              onChange={(v) => setForm({ ...form, module_id: v })} mapLabel={(o) => `${o.name}${o.code ? ` (${o.code})` : ''}`} />
+            <OptionPicker label="Professeur" endpoint="/professors" value={form.professor_id} required
+              onChange={(v) => setForm({ ...form, professor_id: v })}
+              mapLabel={(o) => `${o.user?.name || `Professeur #${o.id}`}${o.speciality ? ` — ${o.speciality}` : ''}`} />
+            <OptionPicker label="Promotion" endpoint="/promotions" value={form.promotion_id} required
+              onChange={(v) => setForm({ ...form, promotion_id: v })} mapLabel={(o) => o.name} />
+            {form.type !== 'Online' && (
+              <OptionPicker label="Salle (optionnel)" endpoint="/rooms" value={form.room_id}
+                onChange={(v) => setForm({ ...form, room_id: v })} mapLabel={(o) => o.name} />
             )}
           </div>
 
-          <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
-            <Button type="button" variant="secondary" onClick={() => {
-              setAttendanceModalOpen(false)
-              setTargetSeanceForAttendance(null)
-              setAttendancePromotionId(null)
-            }}>Annuler</Button>
-            <Button 
-              type="button" 
-              onClick={() => {
-                const recordsPayload = {
-                  seance_id: targetSeanceForAttendance.id,
-                  records: Object.entries(attendanceRecords).map(([studentId, status]) => ({
-                    student_id: parseInt(studentId),
-                    status
-                  }))
-                }
-                saveAttendance.mutate(recordsPayload)
-              }}
-              disabled={saveAttendance.isPending}
-            >
-              {saveAttendance.isPending ? 'Enregistrement...' : 'Valider & Marquer Terminé'}
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Admin Timetable builder modal */}
-      <Modal 
-        open={modalOpen} 
-        onClose={() => setModalOpen(false)} 
-        title={selectedSeanceId ? "Modifier la Séance de Cours" : "Programmer une Séance de Cours"}
-      >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Select 
-              label="Classe Groupe (Promotion)" 
-              value={promotionId} 
-              onChange={e => setPromotionId(e.target.value)} 
-              required
-            >
-              <option value="">Sélectionner la classe...</option>
-              {promotionsList?.map(p => (
-                <option key={p.id} value={p.id}>{p.name} ({p.academic_year})</option>
-              ))}
-            </Select>
-
-            <Select 
-              label="Module (Matière)" 
-              value={moduleId} 
-              onChange={e => setModuleId(e.target.value)} 
-              required
-            >
-              <option value="">Sélectionner le module...</option>
-              {modulesList?.map(m => (
-                <option key={m.id} value={m.id}>[{m.code}] {m.name}</option>
-              ))}
-            </Select>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Input label="Date" type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required />
+            <Input label="Début" type="time" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} required />
+            <Input label="Fin" type="time" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} required />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <Select 
-              label="Enseignant (Professeur)" 
-              value={professorId} 
-              onChange={e => setProfessorId(e.target.value)} 
-              required
-            >
-              <option value="">Sélectionner le professeur...</option>
-              {professorsList?.map(prof => (
-                <option key={prof.professor?.id} value={prof.professor?.id}>{prof.name}</option>
-              ))}
-            </Select>
-
-            <Select 
-              label="Salle de cours" 
-              value={roomId} 
-              onChange={e => setRoomId(e.target.value)}
-            >
-              <option value="">En ligne (Pas de salle)</option>
-              {roomsList?.map(r => (
-                <option key={r.id} value={r.id}>{r.name} ({r.building || 'Bâtiment'} - Capacité: {r.capacity})</option>
-              ))}
-            </Select>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4">
-            <Select label="Type de Séance" value={type} onChange={e => setType(e.target.value)} required>
-              <option value="CM">CM (Lecture)</option>
-              <option value="TD">TD (T. Dirigés)</option>
-              <option value="TP">TP (T. Pratiques)</option>
-              <option value="Online">En ligne</option>
-            </Select>
-
-            <Select label="Statut" value={status} onChange={e => setStatus(e.target.value)} required>
-              <option value="scheduled">Planifié (scheduled)</option>
-              <option value="done">Terminé (done)</option>
-              <option value="cancelled">Annulé (cancelled)</option>
-            </Select>
-
-            <Input 
-              label="Date" 
-              type="date" 
-              value={date} 
-              onChange={e => setDate(e.target.value)} 
-              required 
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Input 
-              label="Heure de Début" 
-              type="time" 
-              value={startTime} 
-              onChange={e => setStartTime(e.target.value)} 
-              required 
-            />
-            
-            <Input 
-              label="Heure de Fin" 
-              type="time" 
-              value={endTime} 
-              onChange={e => setEndTime(e.target.value)} 
-              required 
-            />
-          </div>
-
-          <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
-            <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>Annuler</Button>
-            <Button type="submit" disabled={createSeance.isPending || editSeance.isPending}>
-              {createSeance.isPending || editSeance.isPending ? 'Enregistrement...' : 'Enregistrer la séance'}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={closeForm}>Annuler</Button>
+            <Button type="submit" loading={save.isPending}>
+              <CalendarDays size={15} />
+              {editing ? 'Enregistrer' : 'Planifier la séance'}
             </Button>
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => remove.mutate(deleting.id)}
+        loading={remove.isPending}
+        message={
+          <>
+            Voulez-vous vraiment supprimer la séance de{' '}
+            <strong className="font-semibold text-slate-800">{deleting?.module?.name}</strong> du{' '}
+            {deleting?.date && new Date(deleting.date).toLocaleDateString('fr-FR')} ?
+            Les présences associées seront également supprimées.
+          </>
+        }
+      />
     </div>
+  )
+}
+
+function QuickAction({ label, tone = 'brand', onClick, children }) {
+  const tones = {
+    brand: 'text-slate-400 hover:bg-brand-50 hover:text-brand-600',
+    emerald: 'text-slate-400 hover:bg-emerald-50 hover:text-emerald-600',
+    danger: 'text-slate-400 hover:bg-rose-50 hover:text-rose-600',
+  }
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      className={`inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-brand-200 ${tones[tone]}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Modale détail — GET /seances/{id} est déjà chargé dans la liste   */
+/* ------------------------------------------------------------------ */
+function SeanceDetail({ seance, onClose, canManage, canStatus, onEdit, onDelete, onStatus }) {
+  if (!seance) return null
+  const t = TYPES[seance.type] || TYPES.CM
+
+  const rows = [
+    { icon: User, label: 'Professeur', value: seance.professor?.user?.name || '—' },
+    { icon: GraduationCap, label: 'Promotion', value: seance.promotion?.name || '—' },
+    { icon: seance.type === 'Online' || !seance.room ? Video : DoorOpen, label: 'Salle', value: seance.room?.name || 'En ligne' },
+    { icon: Layers, label: 'Module', value: `${seance.module?.name || '—'}${seance.module?.code ? ` (${seance.module.code})` : ''}` },
+  ]
+
+  return (
+    <Modal open={!!seance} onClose={onClose} size="xl" title="Séance">
+      <div className="space-y-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge className={t.chip}>{seance.type} — {t.label}</Badge>
+          <StatusBadge status={seance.status} />
+        </div>
+
+        <div>
+          <h2 className="font-display text-lg font-bold text-slate-900">{seance.module?.name}</h2>
+          <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500 first-letter:uppercase">
+            <CalendarDays size={14} />
+            {seance.date && new Intl.DateTimeFormat('fr-FR', { dateStyle: 'full' }).format(new Date(seance.date))}
+            {' · '}
+            {seance.start_time?.slice(0, 5)} → {seance.end_time?.slice(0, 5)}
+            {durationLabel(seance.start_time, seance.end_time) && ` (${durationLabel(seance.start_time, seance.end_time)})`}
+          </p>
+        </div>
+
+        <div className="grid gap-3 rounded-xl border border-slate-100 bg-slate-50/60 p-4 sm:grid-cols-2">
+          {rows.map((r) => (
+            <span key={r.label} className="flex items-center gap-2 text-sm text-slate-600">
+              <r.icon size={14} className="shrink-0 text-slate-400" />
+              <span className="text-slate-400">{r.label} :</span>
+              <span className="truncate font-medium text-slate-700">{r.value}</span>
+            </span>
+          ))}
+        </div>
+
+        {(canStatus || canManage) && (
+          <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+            {canStatus && seance.status === 'scheduled' && (
+              <>
+                <Button variant="secondary" size="sm" onClick={() => onStatus('done')}>
+                  <CheckCircle2 size={14} /> Marquer terminée
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => onStatus('cancelled')}>
+                  <XCircle size={14} /> Annuler la séance
+                </Button>
+              </>
+            )}
+            {canStatus && seance.status !== 'scheduled' && (
+              <Button variant="secondary" size="sm" onClick={() => onStatus('scheduled')}>
+                <RotateCcw size={14} /> Replanifier
+              </Button>
+            )}
+            {canManage && (
+              <>
+                <Button variant="secondary" size="sm" onClick={onEdit}><Pencil size={14} /> Modifier</Button>
+                <Button variant="danger" size="sm" onClick={onDelete}><Trash2 size={14} /> Supprimer</Button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Sélecteur générique alimenté par l'API                            */
+/* ------------------------------------------------------------------ */
+function OptionPicker({ label, endpoint, value, onChange, mapLabel, required = false }) {
+  const { data, isError } = useQuery({
+    queryKey: ['options', endpoint],
+    queryFn: () => api.get(endpoint, { params: { per_page: 200 } }).then((r) => r.data),
+  })
+
+  if (isError) {
+    return (
+      <Input label={label} type="number" value={value ?? ''} onChange={(e) => onChange(e.target.value)}
+        required={required} hint="Liste indisponible — saisissez l'identifiant." />
+    )
+  }
+
+  const options = data?.data ?? data ?? []
+  return (
+    <Select label={label} value={value ?? ''} onChange={(e) => onChange(e.target.value)} required={required}>
+      <option value="">— Choisir —</option>
+      {options.map((o) => (
+        <option key={o.id} value={o.id}>{mapLabel(o)}</option>
+      ))}
+    </Select>
   )
 }

@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
 use Tymon\JWTAuth\Facades\JWTAuth;
@@ -12,8 +14,51 @@ use Tymon\JWTAuth\Facades\JWTAuth;
 class GoogleAuthController extends Controller
 {
     /**
+     * POST /api/auth/google
+     * Popup flow (@react-oauth/google): the frontend sends the Google access
+     * token obtained from the account the user picked in the popup. We read
+     * the Google profile, register the user if new (or find them), and
+     * return a JWT session — same payload as email login/register.
+     */
+    public function loginWithToken(Request $request): JsonResponse
+    {
+        $request->validate([
+            'access_token' => ['required', 'string'],
+        ]);
+
+        try {
+            $googleUser = Socialite::driver('google')->stateless()->userFromToken($request->access_token);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Jeton Google invalide ou expiré.'], 401);
+        }
+
+        if (! $googleUser->getEmail()) {
+            return response()->json(['message' => "Impossible de récupérer l'email du compte Google."], 422);
+        }
+
+        $user = $this->findOrCreateUser($googleUser);
+
+        if (! $user->isActive()) {
+            return response()->json([
+                'message' => 'Votre compte est '.$user->status.'. Contactez l\'administration.',
+            ], 403);
+        }
+
+        $token = JWTAuth::fromUser($user);
+
+        return response()->json([
+            'access_token' => $token,
+            'token_type' => 'bearer',
+            'expires_in' => auth('api')->factory()->getTTL() * 60,
+            'user' => $user,
+            'roles' => $user->getRoleNames(),
+            'permissions' => $user->getAllPermissions()->pluck('name'),
+        ]);
+    }
+
+    /**
      * GET /api/auth/google/redirect
-     * Kicks off the Google OAuth flow.
+     * Legacy server-side redirect flow (kept as fallback).
      */
     public function redirect(): RedirectResponse
     {
@@ -37,6 +82,24 @@ class GoogleAuthController extends Controller
             return $this->toFrontend(['error' => 'Échec de l\'authentification Google.']);
         }
 
+        $user = $this->findOrCreateUser($googleUser);
+
+        if (! $user->isActive()) {
+            return $this->toFrontend(['error' => 'Votre compte est '.$user->status.'.']);
+        }
+
+        $token = JWTAuth::fromUser($user);
+
+        return $this->toFrontend(['token' => $token]);
+    }
+
+    /**
+     * Login = the Google email already exists in the database.
+     * Register = first time we see this email: create the account from the
+     * Google profile (name, email, avatar) with the AutoFormation role.
+     */
+    private function findOrCreateUser($googleUser): User
+    {
         $user = User::where('email', $googleUser->getEmail())->first();
 
         if (! $user) {
@@ -51,13 +114,7 @@ class GoogleAuthController extends Controller
             $user->assignRole('AutoFormation');
         }
 
-        if (! $user->isActive()) {
-            return $this->toFrontend(['error' => 'Votre compte est '.$user->status.'.']);
-        }
-
-        $token = JWTAuth::fromUser($user);
-
-        return $this->toFrontend(['token' => $token]);
+        return $user;
     }
 
     private function toFrontend(array $params): RedirectResponse

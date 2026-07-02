@@ -1,21 +1,80 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useGoogleLogin } from '@react-oauth/google'
+import { Loader2 } from 'lucide-react'
+import api from '../../lib/api'
+import { useAuthStore } from '../../store/auth'
+
+const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
 
 /**
- * Redirects to the backend Google OAuth flow (Laravel Socialite).
- * Works once GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are set in the backend .env.
+ * Google sign-in via popup (@react-oauth/google).
+ * The user picks an account in the Google popup; we send the access token
+ * to the API which registers the account (first time) or logs it in.
+ * Requires VITE_GOOGLE_CLIENT_ID in frontend/.env.
  */
-export default function GoogleButton({ label = 'Continuer avec Google' }) {
-  const handleClick = () => {
-    window.location.href = `${API_BASE}/api/auth/google/redirect`
+export default function GoogleButton({ label = 'Continuer avec Google', onError }) {
+  // useGoogleLogin initializes Google's SDK on mount and crashes the page
+  // if the client ID is empty — only mount it once an ID is configured.
+  if (!CLIENT_ID) {
+    return (
+      <ButtonShell
+        label={label}
+        onClick={() => onError?.("La connexion Google n'est pas encore configurée (VITE_GOOGLE_CLIENT_ID manquant).")}
+      />
+    )
   }
 
+  return <GoogleLoginButton label={label} onError={onError} />
+}
+
+function GoogleLoginButton({ label, onError }) {
+  const navigate = useNavigate()
+  const setSession = useAuthStore((s) => s.setSession)
+  const [loading, setLoading] = useState(false)
+
+  const fail = (message) => {
+    setLoading(false)
+    onError?.(message)
+  }
+
+  const login = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      try {
+        const { data } = await api.post('/auth/google', {
+          access_token: tokenResponse.access_token,
+        })
+        setSession(data)
+        navigate('/dashboard')
+      } catch (err) {
+        fail(err.response?.data?.message || 'Échec de la connexion avec Google.')
+      }
+    },
+    onError: () => fail('Échec de la connexion avec Google.'),
+    onNonOAuthError: () => setLoading(false), // popup closed by the user
+  })
+
+  const handleClick = () => {
+    setLoading(true)
+    try {
+      login()
+    } catch {
+      fail('Échec de la connexion avec Google.')
+    }
+  }
+
+  return <ButtonShell label={label} onClick={handleClick} loading={loading} />
+}
+
+function ButtonShell({ label, onClick, loading = false }) {
   return (
     <button
       type="button"
-      onClick={handleClick}
-      className="inline-flex w-full items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-ink-800 transition-colors duration-200 hover:border-iris-400 hover:bg-slate-50"
+      onClick={onClick}
+      disabled={loading}
+      className="inline-flex w-full items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-ink-800 transition-colors duration-200 hover:border-iris-400 hover:bg-slate-50 disabled:opacity-60"
     >
-      <GoogleIcon />
+      {loading ? <Loader2 size={18} className="animate-spin" /> : <GoogleIcon />}
       {label}
     </button>
   )

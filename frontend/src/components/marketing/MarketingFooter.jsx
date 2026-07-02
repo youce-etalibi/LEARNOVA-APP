@@ -56,7 +56,7 @@ export default function MarketingFooter() {
       <div className="relative mx-auto max-w-7xl px-5 py-16 lg:px-8">
         <div className="grid gap-12 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
           <div>
-            <img src="/logos/whte_horizontal_logo.png" alt="Learnova" className="h-9 w-auto" />
+            <img src="/logos/whte_horizontal_logo.png" alt="Learnova" className="h-16 w-auto" />
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-slate-400">
               La plateforme e-learning tout-en-un pour les écoles modernes.
               Apprendre. Interagir. Grandir.

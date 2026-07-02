@@ -44,7 +44,7 @@ export default function Login() {
       <p className="mt-2 text-slate-500">Accédez à votre espace Learnova.</p>
 
       <div className="mt-8">
-        <GoogleButton label="Se connecter avec Google" />
+        <GoogleButton label="Se connecter avec Google" onError={setError} />
       </div>
 
       <div className="my-6 flex items-center gap-4 text-xs font-medium uppercase tracking-wider text-slate-400">

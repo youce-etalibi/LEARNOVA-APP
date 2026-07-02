@@ -29,6 +29,6 @@ class Absence extends Model
 
     public function justificationRecord(): HasOne
     {
-        return $this->hasOne(Justification::class);
+        return $this->hasOne(Justification::class)->latestOfMany();
     }
 }

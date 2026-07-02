@@ -43,7 +43,9 @@ export default function MarketingNav() {
           <img
             src="/logos/horizontal_logo.png"
             alt="Learnova"
-            className="absolute left-0 top-1/2 h-14 w-auto -translate-y-1/2"
+            className={`absolute left-0 top-1/2 h-14 w-auto -translate-y-1/2 transition-[filter] duration-300 ${
+              scrolled ? '' : 'brightness-0 invert'
+            }`}
           />
         </Link>
 
