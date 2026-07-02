@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class ProfileController extends Controller
@@ -24,6 +25,39 @@ class ProfileController extends Controller
         $user->update($data);
 
         return response()->json($user);
+    }
+
+    public function uploadAvatar(Request $request): JsonResponse
+    {
+        $user = auth('api')->user();
+
+        $request->validate([
+            'avatar' => ['required', 'image', 'mimes:jpeg,jpg,png,gif,webp', 'max:2048'],
+        ]);
+
+        $this->deleteStoredAvatar($user->avatar);
+
+        $path = $request->file('avatar')->store('avatars', 'public');
+        $user->update(['avatar' => '/storage/'.$path]);
+
+        return response()->json($user);
+    }
+
+    public function deleteAvatar(): JsonResponse
+    {
+        $user = auth('api')->user();
+
+        $this->deleteStoredAvatar($user->avatar);
+        $user->update(['avatar' => null]);
+
+        return response()->json($user);
+    }
+
+    private function deleteStoredAvatar(?string $avatar): void
+    {
+        if ($avatar && str_starts_with($avatar, '/storage/avatars/')) {
+            Storage::disk('public')->delete(substr($avatar, strlen('/storage/')));
+        }
     }
 
     public function changePassword(Request $request): JsonResponse

@@ -11,14 +11,20 @@ export default function AuthShell({ children, image = '/assets/img1.jpg', quote 
       {/* Brand panel */}
       <div className="relative hidden w-1/2 overflow-hidden lg:block">
         <img src={image} alt="" className="absolute inset-0 h-full w-full object-cover" />
-        <div className="absolute inset-0 bg-night/85" />
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'linear-gradient(135deg, rgba(21,37,59,0.92) 0%, rgba(97,68,226,0.72) 55%, rgba(50,158,244,0.65) 100%)',
+          }}
+        />
         <div className="aurora aurora-anim" style={{ background: '#6144e2', width: 360, height: 360, top: -80, left: -60 }} />
         <div className="aurora aurora-anim" style={{ background: '#329ef4', width: 380, height: 380, bottom: -120, right: -60, animationDelay: '2s' }} />
         <div className="bg-dotgrid-light absolute inset-0 opacity-40" />
 
         <div className="relative flex h-full flex-col justify-between p-12 text-white">
           <Link to="/">
-            <img src="/logos/whte_horizontal_logo.png" alt="Learnova" className="h-9 w-auto" />
+            <img src="/logos/whte_horizontal_logo.png" alt="Learnova" className="h-14 w-auto" />
           </Link>
 
           <motion.div
@@ -52,7 +58,7 @@ export default function AuthShell({ children, image = '/assets/img1.jpg', quote 
             <Link to="/" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-iris-600">
               <ArrowLeft size={16} /> Accueil
             </Link>
-            <img src="/logos/horizontal_logo.png" alt="Learnova" className="h-7 w-auto lg:hidden" />
+            <img src="/logos/horizontal_logo.png" alt="Learnova" className="h-10 w-auto lg:hidden" />
           </div>
           {children}
         </motion.div>

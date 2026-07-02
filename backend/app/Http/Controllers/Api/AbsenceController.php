@@ -17,7 +17,8 @@ class AbsenceController extends Controller
         $query = Absence::with([
             'student.user:id,name',
             'seance.module:id,name',
-            'seance:id,module_id,date,start_time',
+            'seance:id,module_id,date,start_time,end_time',
+            'justificationRecord',
         ]);
 
         if ($user->hasRole('Student') && $user->student) {

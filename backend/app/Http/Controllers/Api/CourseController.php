@@ -57,15 +57,27 @@ class CourseController extends Controller
 
     public function show(Course $course): JsonResponse
     {
-        $course->load('sections.lessons', 'professor.user:id,name', 'module:id,name');
+        $course->load('sections.lessons', 'professor.user:id,name', 'module:id,name')
+            ->loadCount('enrollments');
 
         $enrollment = null;
+        $completedLessonIds = [];
         if ($user = auth('api')->user()) {
             $enrollment = CourseEnrollment::where('user_id', $user->id)
                 ->where('course_id', $course->id)->first();
+
+            if ($enrollment) {
+                $completedLessonIds = \App\Models\LessonProgress::where('enrollment_id', $enrollment->id)
+                    ->where('status', 'completed')
+                    ->pluck('lesson_id');
+            }
         }
 
-        return response()->json(['course' => $course, 'enrollment' => $enrollment]);
+        return response()->json([
+            'course' => $course,
+            'enrollment' => $enrollment,
+            'completed_lesson_ids' => $completedLessonIds,
+        ]);
     }
 
     public function update(Request $request, Course $course): JsonResponse

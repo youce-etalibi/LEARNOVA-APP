@@ -29,8 +29,7 @@
   scroll-behavior: smooth;
 }
 .shell__content-inner {
-  max-width: 1440px;
-  margin: 0 auto;
+  width: 100%;
   padding: 26px clamp(16px, 3vw, 40px) 48px;
   animation: shell-fade 0.42s var(--ease) both;
 }

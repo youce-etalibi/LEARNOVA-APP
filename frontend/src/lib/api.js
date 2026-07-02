@@ -1,7 +1,9 @@
 import axios from 'axios'
 import { useAuthStore } from '../store/auth'
 
-const baseURL = `${import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'}/api`
+// Requests go to the frontend origin (/api) and the Vite proxy forwards
+// them to the backend. Set VITE_API_BASE_URL only to bypass the proxy.
+const baseURL = `${import.meta.env.VITE_API_BASE_URL || ''}/api`
 
 const api = axios.create({
   baseURL,
