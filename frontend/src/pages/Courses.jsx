@@ -131,6 +131,7 @@ function FilterChips({ value, onChange, options, label }) {
 export default function Courses() {
   const qc = useQueryClient()
   const reduce = useReducedMotion()
+  const navigate = useNavigate()
   const roles = useAuthStore((s) => s.roles)
   const token = useAuthStore((s) => s.token)
   const canWrite = roles.some((r) => ['SuperAdmin', 'Admin', 'ManagementPedagogique', 'Professor'].includes(r))
@@ -178,7 +179,16 @@ export default function Courses() {
   const save = useMutation({
     mutationFn: (payload) =>
       editing ? api.put(`/courses/${editing.id}`, payload) : api.post('/courses', payload),
-    onSuccess: () => { invalidate(); closeForm() },
+    onSuccess: (res) => {
+      invalidate()
+      closeForm()
+      // Nouveau cours créé → on redirige directement vers sa page pour
+      // permettre d'ajouter sections / leçons / vidéos (playlist).
+      if (!editing) {
+        const newId = res?.data?.course?.id ?? res?.data?.id
+        if (newId) navigate(`/courses/${newId}`)
+      }
+    },
     onError: (err) => {
       const errors = err.response?.data?.errors
       setError(errors ? Object.values(errors)[0][0] : err.response?.data?.message || 'Une erreur est survenue.')

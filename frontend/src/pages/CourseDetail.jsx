@@ -41,6 +41,16 @@ const LESSON_TYPES = {
   link: { label: 'Lien', icon: Link2, tile: 'bg-teal-50 text-teal-600' },
 }
 
+function getVideoEmbed(url) {
+  if (!url) return null
+  const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([\w-]{11})/)
+  if (yt) return { kind: 'iframe', src: `https://www.youtube.com/embed/${yt[1]}` }
+  const vimeo = url.match(/vimeo\.com\/(?:video\/)?(\d+)/)
+  if (vimeo) return { kind: 'iframe', src: `https://player.vimeo.com/video/${vimeo[1]}` }
+  if (/\.(mp4|webm|ogg)(\?.*)?$/i.test(url)) return { kind: 'file', src: url }
+  return { kind: 'iframe', src: url }
+}
+
 const EMPTY_SECTION = { title: '', is_free_preview: false }
 const EMPTY_LESSON = { title: '', type: 'video', duration_minutes: 10, content_url: '', content_text: '' }
 
@@ -2006,8 +2016,10 @@ export default function CourseDetail() {
         state={viewingLesson}
         onClose={() => setViewingLesson(null)}
         enrolled={!!enrollment}
-        completed={viewingLesson ? completedIds.has(viewingLesson.lesson.id) : false}
+        completedIds={completedIds}
         onToggle={() => viewingLesson && toggleLesson.mutate(viewingLesson.lesson.id)}
+        onSelect={(lesson, section) => canSee(section) && setViewingLesson({ lesson, section })}
+        sections={sections}
       />
 
       <ConfirmDialog
@@ -2215,54 +2227,116 @@ function LessonModal({ state, onClose, onDone }) {
 /* ------------------------------------------------------------------ */
 /*  Modale lecture d'une leçon (show)                                 */
 /* ------------------------------------------------------------------ */
-function LessonViewModal({ state, onClose, enrolled, completed, onToggle }) {
+function LessonViewModal({ state, onClose, enrolled, completedIds, onToggle, onSelect, sections }) {
   if (!state) return null
   const { lesson } = state
   const lt = LESSON_TYPES[lesson.type] || LESSON_TYPES.text
   const LIcon = lt.icon
+  const completed = completedIds.has(lesson.id)
+  const embed = lesson.type === 'video' ? getVideoEmbed(lesson.content_url) : null
 
   return (
     <Modal open={!!state} onClose={onClose} size="xl" title="Leçon">
-      <div className="space-y-4">
-        <div className="flex items-start gap-3">
-          <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${lt.tile}`}>
-            <LIcon size={20} />
-          </span>
-          <div className="min-w-0">
-            <h2 className="font-display font-bold text-slate-900">{lesson.title}</h2>
-            <p className="text-xs text-slate-500">
-              {lt.label}
-              {lesson.duration_minutes > 0 && ` · ${lesson.duration_minutes} min`}
+      <div className="grid gap-5 lg:grid-cols-[1fr_260px]">
+        {/* ---- Lecteur ---- */}
+        <div className="min-w-0 space-y-4">
+          {embed ? (
+            <div className="aspect-video w-full overflow-hidden rounded-xl bg-black">
+              {embed.kind === 'file' ? (
+                <video key={embed.src} controls autoPlay className="h-full w-full">
+                  <source src={embed.src} />
+                </video>
+              ) : (
+                <iframe
+                  key={embed.src}
+                  src={embed.src}
+                  title={lesson.title}
+                  className="h-full w-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              )}
+            </div>
+          ) : lesson.type === 'text' && lesson.content_text ? (
+            <p className="max-h-80 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50/60 p-4 text-sm leading-relaxed whitespace-pre-line text-slate-700">
+              {lesson.content_text}
             </p>
+          ) : lesson.content_url ? (
+            <a
+              href={lesson.content_url}
+              target="_blank"
+              rel="noreferrer"
+              className="bg-grad-brand btn-shine inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-md"
+            >
+              <LIcon size={15} />
+              Ouvrir le contenu
+              <ExternalLink size={13} />
+            </a>
+          ) : (
+            <p className="text-sm text-slate-400">Le contenu de cette leçon n'est pas encore disponible.</p>
+          )}
+
+          <div className="flex items-start gap-3">
+            <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${lt.tile}`}>
+              <LIcon size={20} />
+            </span>
+            <div className="min-w-0">
+              <h2 className="font-display font-bold text-slate-900">{lesson.title}</h2>
+              <p className="text-xs text-slate-500">
+                {lt.label}
+                {lesson.duration_minutes > 0 && ` · ${lesson.duration_minutes} min`}
+              </p>
+            </div>
           </div>
+
+          {enrolled && (
+            <div className="flex justify-end border-t border-slate-100 pt-4">
+              <Button variant={completed ? 'secondary' : 'primary'} size="sm" onClick={onToggle}>
+                {completed ? <><Circle size={14} /> Marquer comme non terminée</> : <><CheckCircle2 size={14} /> Marquer comme terminée</>}
+              </Button>
+            </div>
+          )}
         </div>
 
-        {lesson.type === 'text' && lesson.content_text ? (
-          <p className="max-h-80 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50/60 p-4 text-sm leading-relaxed whitespace-pre-line text-slate-700">
-            {lesson.content_text}
-          </p>
-        ) : lesson.content_url ? (
-          <a
-            href={lesson.content_url}
-            target="_blank"
-            rel="noreferrer"
-            className="bg-grad-brand btn-shine inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-md"
-          >
-            <LIcon size={15} />
-            Ouvrir le contenu
-            <ExternalLink size={13} />
-          </a>
-        ) : (
-          <p className="text-sm text-slate-400">Le contenu de cette leçon n'est pas encore disponible.</p>
-        )}
-
-        {enrolled && (
-          <div className="flex justify-end border-t border-slate-100 pt-4">
-            <Button variant={completed ? 'secondary' : 'primary'} size="sm" onClick={onToggle}>
-              {completed ? <><Circle size={14} /> Marquer comme non terminée</> : <><CheckCircle2 size={14} /> Marquer comme terminée</>}
-            </Button>
-          </div>
-        )}
+        {/* ---- Playlist ---- */}
+        <div className="min-w-0 space-y-3 lg:max-h-[420px] lg:overflow-y-auto lg:pr-1">
+          {sections.map((section) => (
+            <div key={section.id}>
+              <p className="mb-1.5 truncate text-xs font-semibold uppercase tracking-wide text-slate-400">
+                {section.title}
+              </p>
+              <ul className="space-y-1">
+                {(section.lessons ?? []).map((l) => {
+                  const active = l.id === lesson.id
+                  const lIcon = (LESSON_TYPES[l.type] || LESSON_TYPES.text).icon
+                  const LI = lIcon
+                  const done = completedIds.has(l.id)
+                  return (
+                    <li key={l.id}>
+                      <button
+                        type="button"
+                        onClick={() => onSelect(l, section)}
+                        className={`flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors duration-150 ${
+                          active ? 'bg-brand-50 text-brand-700' : 'hover:bg-slate-50 text-slate-600'
+                        }`}
+                      >
+                        {done ? (
+                          <CheckCircle2 size={15} className="shrink-0 text-emerald-500" />
+                        ) : (
+                          <LI size={15} className="shrink-0 text-slate-400" />
+                        )}
+                        <span className="min-w-0 flex-1 truncate text-xs font-medium">{l.title}</span>
+                        {l.duration_minutes > 0 && (
+                          <span className="shrink-0 text-[10px] text-slate-400">{l.duration_minutes}m</span>
+                        )}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
       </div>
     </Modal>
   )
