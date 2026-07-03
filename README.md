@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="frontend/public/logos/learnova.png" alt="Learnova" width="180" />
+  <img src="frontend/public/logos/learnova.png" alt="Learnova" width="400" />
 </p>
 
 <h1 align="center">🎓 Learnova</h1>
