@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import {
@@ -72,6 +72,7 @@ export default function Seances() {
   const [editing, setEditing] = useState(null)
   const [viewing, setViewing] = useState(null)
   const [deleting, setDeleting] = useState(null)
+  const [absenceViewing, setAbsenceViewing] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [error, setError] = useState(null)
 
@@ -244,8 +245,8 @@ export default function Seances() {
       {isLoading ? (
         <Spinner />
       ) : (
-        <div className="space-y-6">
-          {seances.length === 0 && (
+        <div>
+          {seances.length === 0 ? (
             <Card>
               <EmptyState
                 title="Aucune séance cette semaine"
@@ -253,137 +254,158 @@ export default function Seances() {
                 action={canManage && <Button onClick={() => openCreate()}><Plus size={16} /> Nouvelle séance</Button>}
               />
             </Card>
-          )}
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-start">
+              {days.map((day) => {
+                const key = isoDate(day)
+                const list = (byDate[key] || []).slice().sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''))
+                const isToday = key === todayIso
+                return (
+                  <div key={key} className={`rounded-xl border p-3 min-h-[350px] flex flex-col space-y-3 transition duration-150 ${isToday ? 'bg-brand-50/20 border-brand-200 ring-1 ring-brand-100' : 'bg-slate-50/30 border-slate-200/60'}`}>
+                    {/* Day Column Header */}
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                      <div>
+                        <span className={`text-[10px] font-black uppercase tracking-wider ${isToday ? 'text-brand-600' : 'text-slate-400'}`}>
+                          {new Intl.DateTimeFormat('fr-FR', { weekday: 'short' }).format(day)}
+                        </span>
+                        <h3 className={`text-sm font-bold mt-0.5 ${isToday ? 'text-brand-800' : 'text-slate-700'}`}>
+                          {day.getDate()} {new Intl.DateTimeFormat('fr-FR', { month: 'short' }).format(day)}
+                        </h3>
+                      </div>
+                      {isToday && (
+                        <span className="h-1.5 w-1.5 rounded-full bg-brand-500 animate-pulse" />
+                      )}
+                    </div>
 
-          {seances.length > 0 && days.map((day) => {
-            const key = isoDate(day)
-            const list = (byDate[key] || []).slice().sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''))
-            const isToday = key === todayIso
-            return (
-              <section key={key} aria-label={dayLabel(day)}>
-                <div className="mb-2.5 flex items-center gap-2.5">
-                  <span
-                    className={`flex h-9 w-9 flex-col items-center justify-center rounded-xl text-[10px] font-semibold uppercase leading-none ${
-                      isToday ? 'bg-grad-brand text-white shadow-md' : 'bg-slate-100 text-slate-500'
-                    }`}
-                  >
-                    {new Intl.DateTimeFormat('fr-FR', { weekday: 'short' }).format(day).slice(0, 3)}
-                    <span className="mt-0.5 text-sm font-bold">{day.getDate()}</span>
-                  </span>
-                  <h2 className={`font-display text-sm font-semibold first-letter:uppercase ${isToday ? 'text-brand-700' : 'text-slate-700'}`}>
-                    {dayLabel(day)}
-                    {isToday && <Badge className="ms-2 bg-brand-100 text-brand-700">Aujourd'hui</Badge>}
-                  </h2>
-                  <span className="h-px flex-1 bg-slate-200" aria-hidden="true" />
-                  {canManage && (
-                    <button
-                      type="button"
-                      onClick={() => openCreate(key)}
-                      className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-brand-600 opacity-70 transition-opacity hover:opacity-100"
-                    >
-                      <Plus size={13} /> Ajouter
-                    </button>
-                  )}
-                </div>
-
-                {list.length === 0 ? (
-                  <p className="ms-12 border-s-2 border-dotted border-slate-200 ps-4 text-xs text-slate-400">
-                    Journée libre
-                  </p>
-                ) : (
-                  <div className="space-y-2.5">
-                    <AnimatePresence>
-                      {list.map((s) => {
-                        const t = TYPES[s.type] || TYPES.CM
-                        const cancelled = s.status === 'cancelled'
-                        return (
-                          <motion.div key={s.id} layout {...fadeUp}>
-                            <Card
-                              className={`group relative flex cursor-pointer flex-wrap items-center gap-4 overflow-hidden p-4 ps-5 transition-shadow duration-200 hover:shadow-md ${cancelled ? 'opacity-60' : ''}`}
-                              onClick={() => setViewing(s)}
-                            >
-                              <span className={`absolute inset-y-0 left-0 w-1.5 ${t.rail}`} aria-hidden="true" />
-
-                              {/* Heures */}
-                              <div className="w-16 shrink-0 text-center">
-                                <div className="font-display text-sm font-bold text-slate-800">{s.start_time?.slice(0, 5)}</div>
-                                <div className="text-xs text-slate-400">{s.end_time?.slice(0, 5)}</div>
-                                {durationLabel(s.start_time, s.end_time) && (
-                                  <div className="mt-0.5 text-[10px] font-medium text-slate-400">
-                                    {durationLabel(s.start_time, s.end_time)}
+                    {/* Column Seances List */}
+                    <div className="flex-1 space-y-2">
+                      {list.length === 0 ? (
+                        <div className="h-full flex items-center justify-center py-16 text-center">
+                          <span className="text-[10px] text-slate-300 font-bold uppercase tracking-wider select-none">Journée libre</span>
+                        </div>
+                      ) : (
+                        <AnimatePresence>
+                          {list.map((s) => {
+                            const t = TYPES[s.type] || TYPES.CM
+                            const cancelled = s.status === 'cancelled'
+                            return (
+                              <motion.div key={s.id} layout {...fadeUp}>
+                                <Card
+                                  className={`group relative flex flex-col cursor-pointer overflow-hidden p-3 ps-4 transition-all duration-200 hover:shadow-md border border-slate-100 ${cancelled ? 'opacity-50' : ''}`}
+                                  onClick={() => setViewing(s)}
+                                >
+                                  <span className={`absolute inset-y-0 left-0 w-1 ${t.rail}`} aria-hidden="true" />
+                                  
+                                  {/* Header Time + Type */}
+                                  <div className="flex items-center justify-between mb-1.5">
+                                    <span className="text-[10px] font-bold text-slate-400">
+                                      {s.start_time?.slice(0, 5)} - {s.end_time?.slice(0, 5)}
+                                    </span>
+                                    <span className={`inline-flex px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${t.chip}`}>
+                                      {s.type}
+                                    </span>
                                   </div>
-                                )}
-                              </div>
 
-                              {/* Infos */}
-                              <div className="min-w-0 flex-1">
-                                <div className={`font-medium text-slate-900 ${cancelled ? 'line-through' : ''}`}>
-                                  {s.module?.name}
-                                  {s.module?.code && <span className="ms-1.5 font-mono text-xs text-slate-400">{s.module.code}</span>}
-                                </div>
-                                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-500">
-                                  <span className="inline-flex items-center gap-1"><User size={11} /> {s.professor?.user?.name || '—'}</span>
-                                  <span className="inline-flex items-center gap-1">
-                                    {s.type === 'Online' || !s.room ? <Video size={11} /> : <DoorOpen size={11} />}
-                                    {s.room?.name || 'En ligne'}
-                                  </span>
-                                  <span className="inline-flex items-center gap-1"><GraduationCap size={11} /> {s.promotion?.name}</span>
-                                </div>
-                              </div>
+                                  {/* Module Name */}
+                                  <h4 className="text-xs font-bold text-slate-800 line-clamp-2 leading-snug group-hover:text-brand-600 transition">
+                                    {s.module?.name}
+                                  </h4>
 
-                              {/* Badges + actions */}
-                              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                <Badge className={t.chip}>{s.type}</Badge>
-                                <StatusBadge status={s.status} />
+                                  {/* Details */}
+                                  <div className="mt-2 text-[9px] text-slate-500 font-medium space-y-1">
+                                    <p className="truncate flex items-center gap-1">👤 {s.professor?.user?.name || '—'}</p>
+                                    <p className="truncate flex items-center gap-1">🏫 {s.room?.name || 'En ligne'}</p>
+                                    <p className="truncate flex items-center gap-1">🎓 {s.promotion?.name}</p>
+                                  </div>
 
-                                {canStatus && (
-                                  <span className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-                                    {s.status === 'scheduled' ? (
-                                      <>
-                                        <QuickAction label="Marquer terminée" tone="emerald" onClick={() => setStatus.mutate({ id: s.id, status: 'done' })}>
-                                          <CheckCircle2 size={15} />
-                                        </QuickAction>
-                                        <QuickAction label="Annuler la séance" tone="danger" onClick={() => setStatus.mutate({ id: s.id, status: 'cancelled' })}>
-                                          <XCircle size={15} />
-                                        </QuickAction>
-                                      </>
-                                    ) : (
-                                      <QuickAction label="Replanifier" tone="brand" onClick={() => setStatus.mutate({ id: s.id, status: 'scheduled' })}>
-                                        <RotateCcw size={15} />
-                                      </QuickAction>
+                                  {/* Status */}
+                                  <div className="mt-2.5 pt-2 border-t border-slate-50 flex items-center justify-between flex-wrap gap-2">
+                                    <div className="flex items-center gap-1.5">
+                                      <StatusBadge status={s.status} />
+                                      {canStatus && (
+                                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                          {s.status === 'scheduled' ? (
+                                            <>
+                                              <button
+                                                type="button"
+                                                title="Marquer terminée"
+                                                onClick={() => setStatus.mutate({ id: s.id, status: 'done' })}
+                                                className="inline-flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition border-none"
+                                              >
+                                                <CheckCircle2 size={12} />
+                                              </button>
+                                              <button
+                                                type="button"
+                                                title="Annuler la séance"
+                                                onClick={() => setStatus.mutate({ id: s.id, status: 'cancelled' })}
+                                                className="inline-flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-rose-50 text-rose-600 hover:bg-rose-100 transition border-none"
+                                              >
+                                                <XCircle size={12} />
+                                              </button>
+                                            </>
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              title="Replanifier"
+                                              onClick={() => setStatus.mutate({ id: s.id, status: 'scheduled' })}
+                                              className="inline-flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-blue-50 text-blue-600 hover:bg-blue-100 transition border-none"
+                                            >
+                                              <RotateCcw size={12} />
+                                            </button>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                    {canStatus && (
+                                      <div onClick={(e) => e.stopPropagation()}>
+                                        <button
+                                          type="button"
+                                          title="Feuille d'appel"
+                                          onClick={() => setAbsenceViewing(s)}
+                                          className="px-2 py-1 rounded-lg bg-violet-50 hover:bg-violet-100 text-violet-700 text-[10px] font-black transition flex items-center gap-1 cursor-pointer border border-violet-100 select-none"
+                                        >
+                                          📝 Absences
+                                        </button>
+                                      </div>
                                     )}
-                                    {canManage && (
-                                      <>
-                                        <QuickAction label="Modifier" tone="brand" onClick={() => openEdit(s)}><Pencil size={15} /></QuickAction>
-                                        <QuickAction label="Supprimer" tone="danger" onClick={() => setDeleting(s)}><Trash2 size={15} /></QuickAction>
-                                      </>
-                                    )}
-                                  </span>
-                                )}
-                              </div>
-                            </Card>
-                          </motion.div>
-                        )
-                      })}
-                    </AnimatePresence>
+                                  </div>
+                                </Card>
+                              </motion.div>
+                            )
+                          })}
+                        </AnimatePresence>
+                      )}
+                    </div>
                   </div>
-                )}
-              </section>
-            )
-          })}
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
       {/* ---- Modale détail (show) ---- */}
-      <SeanceDetail
-        seance={viewing}
-        onClose={() => setViewing(null)}
-        canManage={canManage}
-        canStatus={canStatus}
-        onEdit={() => viewing && openEdit(viewing)}
-        onDelete={() => setDeleting(viewing)}
-        onStatus={(status) => viewing && setStatus.mutate({ id: viewing.id, status })}
-      />
+      {viewing && (
+        <SeanceDetail
+          seance={viewing}
+          onClose={() => setViewing(null)}
+          canManage={canManage}
+          canStatus={canStatus}
+          onEdit={() => viewing && openEdit(viewing)}
+          onDelete={() => setDeleting(viewing)}
+          onStatus={(status) => viewing && setStatus.mutate({ id: viewing.id, status })}
+          onStatusSuccess={invalidate}
+        />
+      )}
+
+      {/* ---- Modale Feuille d'appel dédiée ---- */}
+      {absenceViewing && (
+        <AbsenceSheetModal
+          seance={absenceViewing}
+          onClose={() => setAbsenceViewing(null)}
+          onSaveSuccess={invalidate}
+        />
+      )}
 
       {/* ---- Modale création / édition ---- */}
       <Modal open={formOpen} onClose={closeForm} size="xl" title={editing ? 'Modifier la séance' : 'Nouvelle séance'}>
@@ -491,72 +513,184 @@ function QuickAction({ label, tone = 'brand', onClick, children }) {
 /* ------------------------------------------------------------------ */
 /*  Modale détail — GET /seances/{id} est déjà chargé dans la liste   */
 /* ------------------------------------------------------------------ */
-function SeanceDetail({ seance, onClose, canManage, canStatus, onEdit, onDelete, onStatus }) {
+function SeanceDetail({ seance, onClose, canManage, canStatus, onEdit, onDelete, onStatus, onStatusSuccess }) {
+  // Fetch full seance details including absences
+  const { data: fullSeance, isLoading: loadingSeance } = useQuery({
+    queryKey: ['seance-detail', seance?.id],
+    queryFn: () => api.get(`/seances/${seance?.id}`).then((r) => r.data),
+    enabled: !!seance?.id,
+  })
+
+  const [attendance, setAttendance] = useState({})
+  const [savingAttendance, setSavingAttendance] = useState(false)
+
+  // Query promotion details to get students
+  const { data: promotionDetails, isLoading: loadingPromo } = useQuery({
+    queryKey: ['promotion-students', fullSeance?.promotion?.id ?? seance?.promotion?.id ?? seance?.promotion_id],
+    queryFn: () => api.get(`/promotions/${fullSeance?.promotion?.id ?? seance?.promotion?.id ?? seance?.promotion_id}`).then((r) => r.data),
+    enabled: !!seance?.id && canStatus,
+  })
+
+  // Initialize status map
+  useEffect(() => {
+    if (promotionDetails?.students) {
+      const map = {}
+      promotionDetails.students.forEach((st) => {
+        const recorded = (fullSeance || seance)?.absences?.find((a) => a.student_id === st.id)
+        map[st.id] = recorded ? recorded.status : 'present'
+      })
+      setAttendance(map)
+    }
+  }, [fullSeance, seance, promotionDetails])
+
+  const handleSaveAttendance = async () => {
+    setSavingAttendance(true)
+    try {
+      const records = Object.entries(attendance).map(([studentId, status]) => ({
+        student_id: parseInt(studentId),
+        status: status,
+      }))
+      await api.post('/absences/bulk', {
+        seance_id: (fullSeance || seance)?.id,
+        records: records,
+      })
+      alert('Présences et absences enregistrées avec succès !')
+      onClose()
+      if (onStatusSuccess) onStatusSuccess()
+    } catch {
+      alert("Une erreur s'est produite lors de l'enregistrement.")
+    } finally {
+      setSavingAttendance(false)
+    }
+  }
+
+  // Early return statement
   if (!seance) return null
+
   const t = TYPES[seance.type] || TYPES.CM
+  const activeSeance = fullSeance || seance
 
   const rows = [
-    { icon: User, label: 'Professeur', value: seance.professor?.user?.name || '—' },
-    { icon: GraduationCap, label: 'Promotion', value: seance.promotion?.name || '—' },
-    { icon: seance.type === 'Online' || !seance.room ? Video : DoorOpen, label: 'Salle', value: seance.room?.name || 'En ligne' },
-    { icon: Layers, label: 'Module', value: `${seance.module?.name || '—'}${seance.module?.code ? ` (${seance.module.code})` : ''}` },
+    { icon: User, label: 'Professeur', value: activeSeance.professor?.user?.name || '—' },
+    { icon: GraduationCap, label: 'Promotion', value: activeSeance.promotion?.name || '—' },
+    { icon: activeSeance.type === 'Online' || !activeSeance.room ? Video : DoorOpen, label: 'Salle', value: activeSeance.room?.name || 'En ligne' },
+    { icon: Layers, label: 'Module', value: `${activeSeance.module?.name || '—'}${activeSeance.module?.code ? ` (${activeSeance.module.code})` : ''}` },
   ]
-
   return (
-    <Modal open={!!seance} onClose={onClose} size="xl" title="Séance">
-      <div className="space-y-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge className={t.chip}>{seance.type} — {t.label}</Badge>
-          <StatusBadge status={seance.status} />
+    <Modal open={!!seance} onClose={onClose} size="xl" title="Détails de la séance">
+      {loadingSeance ? (
+        <div className="flex flex-col items-center justify-center py-12 space-y-3">
+          <Spinner />
+          <span className="text-xs text-slate-500 font-medium">Chargement des détails de la séance...</span>
         </div>
-
-        <div>
-          <h2 className="font-display text-lg font-bold text-slate-900">{seance.module?.name}</h2>
-          <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500 first-letter:uppercase">
-            <CalendarDays size={14} />
-            {seance.date && new Intl.DateTimeFormat('fr-FR', { dateStyle: 'full' }).format(new Date(seance.date))}
-            {' · '}
-            {seance.start_time?.slice(0, 5)} → {seance.end_time?.slice(0, 5)}
-            {durationLabel(seance.start_time, seance.end_time) && ` (${durationLabel(seance.start_time, seance.end_time)})`}
-          </p>
-        </div>
-
-        <div className="grid gap-3 rounded-xl border border-slate-100 bg-slate-50/60 p-4 sm:grid-cols-2">
-          {rows.map((r) => (
-            <span key={r.label} className="flex items-center gap-2 text-sm text-slate-600">
-              <r.icon size={14} className="shrink-0 text-slate-400" />
-              <span className="text-slate-400">{r.label} :</span>
-              <span className="truncate font-medium text-slate-700">{r.value}</span>
-            </span>
-          ))}
-        </div>
-
-        {(canStatus || canManage) && (
-          <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
-            {canStatus && seance.status === 'scheduled' && (
-              <>
-                <Button variant="secondary" size="sm" onClick={() => onStatus('done')}>
-                  <CheckCircle2 size={14} /> Marquer terminée
-                </Button>
-                <Button variant="secondary" size="sm" onClick={() => onStatus('cancelled')}>
-                  <XCircle size={14} /> Annuler la séance
-                </Button>
-              </>
-            )}
-            {canStatus && seance.status !== 'scheduled' && (
-              <Button variant="secondary" size="sm" onClick={() => onStatus('scheduled')}>
-                <RotateCcw size={14} /> Replanifier
-              </Button>
-            )}
-            {canManage && (
-              <>
-                <Button variant="secondary" size="sm" onClick={onEdit}><Pencil size={14} /> Modifier</Button>
-                <Button variant="danger" size="sm" onClick={onDelete}><Trash2 size={14} /> Supprimer</Button>
-              </>
-            )}
+      ) : (
+        <div className="space-y-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className={t.chip}>{activeSeance.type} — {t.label}</Badge>
+            <StatusBadge status={activeSeance.status} />
           </div>
-        )}
-      </div>
+
+          <div>
+            <h2 className="font-display text-lg font-bold text-slate-900">{activeSeance.module?.name}</h2>
+            <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500 first-letter:uppercase">
+              <CalendarDays size={14} />
+              {activeSeance.date && new Intl.DateTimeFormat('fr-FR', { dateStyle: 'full' }).format(new Date(activeSeance.date))}
+              {' · '}
+              {activeSeance.start_time?.slice(0, 5)} → {activeSeance.end_time?.slice(0, 5)}
+              {durationLabel(activeSeance.start_time, activeSeance.end_time) && ` (${durationLabel(activeSeance.start_time, activeSeance.end_time)})`}
+            </p>
+          </div>
+
+          <div className="grid gap-3 rounded-xl border border-slate-100 bg-slate-50/60 p-4 sm:grid-cols-2">
+            {rows.map((r) => (
+              <span key={r.label} className="flex items-center gap-2 text-sm text-slate-600">
+                <r.icon size={14} className="shrink-0 text-slate-400" />
+                <span className="text-slate-400">{r.label} :</span>
+                <span className="truncate font-medium text-slate-700">{r.value}</span>
+              </span>
+            ))}
+          </div>
+
+          {canStatus && (
+            <div className="border-t border-slate-100 pt-5 space-y-3">
+              <h3 className="font-display text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                <GraduationCap size={16} className="text-brand-500" />
+                Feuille d'appel ({promotionDetails?.students?.length || 0} étudiants)
+              </h3>
+              
+              {loadingPromo ? (
+                <div className="flex justify-center py-4"><Spinner size="sm" /></div>
+              ) : (
+                <div className="max-h-60 overflow-y-auto divide-y divide-slate-100 border border-slate-200/60 rounded-xl bg-white shadow-sm">
+                  {promotionDetails?.students?.map((st) => {
+                    const currentStatus = attendance[st.id] || 'present'
+                    return (
+                      <div key={st.id} className="flex items-center justify-between p-3 text-xs">
+                        <span className="font-semibold text-slate-700">{st.user?.name}</span>
+                        <div className="flex gap-1.5">
+                          {['present', 'absent', 'late', 'justified'].map((status) => {
+                            if (status === 'justified' && currentStatus !== 'justified') return null; // Only show justified if it is already justified
+                            
+                            const labels = { present: 'Présent', absent: 'Absent', late: 'Retard', justified: 'Justifié' }
+                            const colors = {
+                              present: currentStatus === 'present' ? 'bg-emerald-500 text-white shadow-sm' : 'hover:bg-slate-50 text-slate-500 border border-slate-200 bg-white',
+                              absent: currentStatus === 'absent' ? 'bg-rose-500 text-white shadow-sm' : 'hover:bg-slate-50 text-slate-500 border border-slate-200 bg-white',
+                              late: currentStatus === 'late' ? 'bg-amber-500 text-white shadow-sm' : 'hover:bg-slate-50 text-slate-500 border border-slate-200 bg-white',
+                              justified: currentStatus === 'justified' ? 'bg-violet-500 text-white shadow-sm' : 'hover:bg-slate-50 text-slate-500 border border-slate-200 bg-white'
+                            }
+                            return (
+                              <button
+                                key={status}
+                                type="button"
+                                onClick={() => setAttendance({ ...attendance, [st.id]: status })}
+                                className={`px-2.5 py-1 rounded-lg transition font-bold select-none cursor-pointer text-[10px] ${colors[status]}`}
+                              >
+                                {labels[status]}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              
+              <div className="flex justify-end pt-2">
+                <Button type="button" onClick={handleSaveAttendance} loading={savingAttendance} disabled={loadingPromo}>
+                  💾 Enregistrer la feuille d'appel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {(canStatus || canManage) && (
+            <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+              {canStatus && activeSeance.status === 'scheduled' && (
+                <>
+                  <Button variant="secondary" size="sm" onClick={() => onStatus('done')}>
+                    <CheckCircle2 size={14} /> Marquer terminée
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => onStatus('cancelled')}>
+                    <XCircle size={14} /> Annuler la séance
+                  </Button>
+                </>
+              )}
+              {canStatus && activeSeance.status !== 'scheduled' && (
+                <Button variant="secondary" size="sm" onClick={() => onStatus('scheduled')}>
+                  <RotateCcw size={14} /> Replanifier
+                </Button>
+              )}
+              {canManage && (
+                <>
+                  <Button variant="secondary" size="sm" onClick={onEdit}><Pencil size={14} /> Modifier</Button>
+                  <Button variant="danger" size="sm" onClick={onDelete}><Trash2 size={14} /> Supprimer</Button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </Modal>
   )
 }
@@ -585,5 +719,125 @@ function OptionPicker({ label, endpoint, value, onChange, mapLabel, required = f
         <option key={o.id} value={o.id}>{mapLabel(o)}</option>
       ))}
     </Select>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Modale feuille d'appel dédiée                                     */
+/* ------------------------------------------------------------------ */
+function AbsenceSheetModal({ seance, onClose, onSaveSuccess }) {
+  if (!seance) return null
+
+  // Fetch full seance details including absences
+  const { data: fullSeance, isLoading: loadingSeance } = useQuery({
+    queryKey: ['seance-absences-details', seance.id],
+    queryFn: () => api.get(`/seances/${seance.id}`).then((r) => r.data),
+    enabled: !!seance?.id,
+  })
+
+  // Fetch students of the promotion
+  const { data: promotionDetails, isLoading: loadingPromo } = useQuery({
+    queryKey: ['promotion-students-modal', seance?.promotion?.id ?? seance?.promotion_id],
+    queryFn: () => api.get(`/promotions/${seance?.promotion?.id ?? seance?.promotion_id}`).then((r) => r.data),
+    enabled: !!seance?.id,
+  })
+
+  const [attendance, setAttendance] = useState({})
+  const [saving, setSaving] = useState(false)
+
+  // Initialize status map
+  useEffect(() => {
+    if (promotionDetails?.students) {
+      const map = {}
+      promotionDetails.students.forEach((st) => {
+        const recorded = fullSeance?.absences?.find((a) => a.student_id === st.id)
+        map[st.id] = recorded ? recorded.status : 'present'
+      })
+      setAttendance(map)
+    }
+  }, [fullSeance, promotionDetails])
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      const records = Object.entries(attendance).map(([studentId, status]) => ({
+        student_id: parseInt(studentId),
+        status: status,
+      }))
+      await api.post('/absences/bulk', {
+        seance_id: seance.id,
+        records: records,
+      })
+      alert('Feuille d\'appel enregistrée avec succès !')
+      onClose()
+      if (onSaveSuccess) onSaveSuccess()
+    } catch (e) {
+      alert("Une erreur s'est produite lors de l'enregistrement.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open={!!seance} onClose={onClose} size="xl" title={`Feuille d'appel - ${seance?.module?.name}`}>
+      {loadingSeance || loadingPromo ? (
+        <div className="flex flex-col items-center justify-center py-12 space-y-3">
+          <Spinner />
+          <span className="text-xs text-slate-500 font-medium">Chargement des élèves et présences...</span>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs space-y-1 text-slate-600">
+            <p><strong>Classe / Promotion :</strong> {seance?.promotion?.name}</p>
+            <p><strong>Date & Heure :</strong> {seance?.date && new Date(seance.date).toLocaleDateString('fr-FR')} ({seance?.start_time?.slice(0, 5)} - {seance?.end_time?.slice(0, 5)})</p>
+          </div>
+
+          <div className="divide-y divide-slate-100 border border-slate-200/60 rounded-xl bg-white shadow-sm overflow-hidden max-h-96 overflow-y-auto">
+            {promotionDetails?.students?.length === 0 ? (
+              <p className="p-4 text-xs text-slate-400 text-center">Aucun étudiant dans cette promotion.</p>
+            ) : (
+              promotionDetails?.students?.map((st) => {
+                const currentStatus = attendance[st.id] || 'present'
+                return (
+                  <div key={st.id} className="flex items-center justify-between p-3 text-xs hover:bg-slate-50/50 transition">
+                    <span className="font-semibold text-slate-700">{st.user?.name}</span>
+                    <div className="flex gap-1.5">
+                      {['present', 'absent', 'late', 'justified'].map((status) => {
+                        if (status === 'justified' && currentStatus !== 'justified') return null
+
+                        const labels = { present: 'Présent', absent: 'Absent', late: 'Retard', justified: 'Justifié' }
+                        const colors = {
+                          present: currentStatus === 'present' ? 'bg-emerald-500 text-white shadow-sm' : 'hover:bg-slate-50 text-slate-500 border border-slate-200 bg-white',
+                          absent: currentStatus === 'absent' ? 'bg-rose-500 text-white shadow-sm' : 'hover:bg-slate-50 text-slate-500 border border-slate-200 bg-white',
+                          late: currentStatus === 'late' ? 'bg-amber-500 text-white shadow-sm' : 'hover:bg-slate-50 text-slate-500 border border-slate-200 bg-white',
+                          justified: currentStatus === 'justified' ? 'bg-violet-500 text-white shadow-sm' : 'hover:bg-slate-50 text-slate-500 border border-slate-200 bg-white'
+                        }
+                        return (
+                          <button
+                            key={status}
+                            type="button"
+                            onClick={() => setAttendance({ ...attendance, [st.id]: status })}
+                            className={`px-2.5 py-1 rounded-lg transition font-bold select-none cursor-pointer text-[10px] ${colors[status]}`}
+                          >
+                            {labels[status]}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <Button type="button" variant="secondary" onClick={onClose}>Annuler</Button>
+            <Button onClick={handleSave} loading={saving} disabled={promotionDetails?.students?.length === 0}>
+              💾 Enregistrer la feuille d'appel
+            </Button>
+          </div>
+        </div>
+      )}
+    </Modal>
   )
 }

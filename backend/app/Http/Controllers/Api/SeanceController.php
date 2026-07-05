@@ -51,7 +51,7 @@ class SeanceController extends Controller
 
     public function show(Seance $seance): JsonResponse
     {
-        return response()->json($seance->load('module', 'professor.user:id,name', 'promotion', 'room'));
+        return response()->json($seance->load('module', 'professor.user:id,name', 'promotion', 'room', 'absences'));
     }
 
     public function update(Request $request, Seance $seance): JsonResponse
