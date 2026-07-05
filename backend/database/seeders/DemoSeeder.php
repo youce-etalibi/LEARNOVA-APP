@@ -435,6 +435,41 @@ class DemoSeeder extends Seeder
         ]);
 
         // ---------- Chat Conversations & Messages ----------
+        // 0. AI Virtual User & Chat
+        $aiUser = User::create([
+            'name' => 'Learnova IA',
+            'email' => 'ai@learnova.test',
+            'password' => bcrypt('password'),
+            'status' => 'active',
+            'email_verified_at' => now(),
+            'phone' => '0600000000',
+            'bio' => 'Tuteur académique virtuel basé sur l\'IA pour vous accompagner dans vos cours.',
+        ]);
+
+        $aiConv = ChatConversation::create([
+            'type' => 'direct',
+            'creator_id' => $aiUser->id,
+        ]);
+
+        ChatParticipant::create([
+            'conversation_id' => $aiConv->id,
+            'user_id' => $students[0]->user_id,
+            'last_read_at' => now(),
+        ]);
+
+        ChatParticipant::create([
+            'conversation_id' => $aiConv->id,
+            'user_id' => $aiUser->id,
+            'last_read_at' => now(),
+        ]);
+
+        Message::create([
+            'conversation_id' => $aiConv->id,
+            'sender_id' => $aiUser->id,
+            'content' => "🤖 Bonjour Youssef ! Je suis votre tuteur virtuel Learnova IA. Vous pouvez me poser des questions sur vos cours de Programmation Web ou de Bases de Données, me demander des résumés ou des exercices d'entraînement. Comment puis-je vous aider ?",
+            'created_at' => now()->subHours(1),
+        ]);
+
         // 1. Direct chat between Youssef (Student 1) and Karim (Management)
         $directConv = ChatConversation::create([
             'type' => 'direct',

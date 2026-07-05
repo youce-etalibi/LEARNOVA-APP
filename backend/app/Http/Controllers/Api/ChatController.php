@@ -10,6 +10,8 @@ use App\Models\Professor;
 use App\Models\Promotion;
 use App\Models\Student;
 use App\Models\User;
+use App\Models\Module;
+use App\Services\OpenRouterService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -168,6 +170,97 @@ class ChatController extends Controller
         }
 
         $conversation = ChatConversation::find($conversationId);
+
+        // Intercept AI chatbot conversation
+        $aiUser = $conversation->users()->where('email', 'ai@learnova.test')->first();
+        if ($aiUser) {
+            // Save the user's message
+            $userMessage = Message::create([
+                'conversation_id' => $conversationId,
+                'sender_id' => $user->id,
+                'content' => $content,
+            ]);
+
+            // Mark user's read receipt
+            $participant->update(['last_read_at' => now()]);
+
+            // Gather academic context
+            $context = "Tu es Learnova IA, un tuteur académique virtuel intelligent intégré dans la plateforme Learnova.\n";
+            $context .= "Tu discutes avec " . $user->name . " (Rôle: " . ($user->hasRole('Student') ? 'Étudiant' : ($user->hasRole('Professor') ? 'Enseignant' : 'Administration')) . ").\n";
+
+            if ($user->hasRole('Student')) {
+                $student = Student::where('user_id', $user->id)->with('promotion.filiere')->first();
+                if ($student) {
+                    $context .= "L'étudiant est dans la classe : " . ($student->promotion->name ?? 'Non définie') . " (Filière: " . ($student->promotion->filiere->name ?? 'Non définie') . ").\n";
+                    if ($student->promotion) {
+                        $modules = Module::where('filiere_id', $student->promotion->filiere_id)->pluck('name')->toArray();
+                        $context .= "Ses matières d'études ce semestre sont : " . implode(', ', $modules) . ".\n";
+                    }
+                }
+            } elseif ($user->hasRole('Professor')) {
+                $prof = Professor::where('user_id', $user->id)->with('modules')->first();
+                if ($prof) {
+                    $modules = $prof->modules->pluck('name')->toArray();
+                    $context .= "C'est un enseignant qui enseigne les matières suivantes : " . implode(', ', $modules) . ".\n";
+                }
+            }
+
+            $context .= "\nRéponds en français. Sois concis, utilise des emojis pour rendre les réponses chaleureuses, et structure tes explications en Markdown.";
+
+            // Load last 10 messages from database as conversation history
+            $history = Message::where('conversation_id', $conversationId)
+                ->orderBy('created_at', 'asc')
+                ->take(10)
+                ->get();
+
+            $openRouterMessages = [
+                ['role' => 'system', 'content' => $context]
+            ];
+
+            foreach ($history as $historyMsg) {
+                if ($historyMsg->id != $userMessage->id) {
+                    $role = $historyMsg->sender_id === $aiUser->id ? 'assistant' : 'user';
+                    $openRouterMessages[] = [
+                        'role' => $role,
+                        'content' => $historyMsg->content
+                    ];
+                }
+            }
+
+            // Add current message
+            $openRouterMessages[] = [
+                'role' => 'user',
+                'content' => $content
+            ];
+
+            // Call OpenRouter API
+            $openRouterService = new OpenRouterService();
+            $reply = $openRouterService->chat($openRouterMessages);
+
+            if (!$reply) {
+                $reply = "Désolé, je rencontre une difficulté technique pour répondre. Veuillez réessayer dans quelques instants.";
+            }
+
+            // Save the AI message reply
+            $aiMessage = Message::create([
+                'conversation_id' => $conversationId,
+                'sender_id' => $aiUser->id,
+                'content' => $reply,
+            ]);
+
+            // Update AI read receipt
+            ChatParticipant::where('conversation_id', $conversationId)
+                ->where('user_id', $aiUser->id)
+                ->update(['last_read_at' => now()]);
+
+            return response()->json([
+                'id' => $aiMessage->id,
+                'sender_id' => $aiMessage->sender_id,
+                'sender_name' => $aiUser->name,
+                'content' => $aiMessage->content,
+                'created_at' => $aiMessage->created_at->toIso8601String(),
+            ]);
+        }
 
         // Check if group is read-only for students
         if ($conversation->type === 'group' && $conversation->read_only_for_students) {

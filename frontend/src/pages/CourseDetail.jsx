@@ -153,6 +153,11 @@ export default function CourseDetail() {
   const [showAddQuestionForm, setShowAddQuestionForm] = useState(false)
   const [creatingQuizForLessonId, setCreatingQuizForLessonId] = useState(null)
 
+  // AI Quiz Generator states
+  const [aiTopic, setAiTopic] = useState('')
+  const [aiCount, setAiCount] = useState(3)
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false)
+
   // Student Quiz Player Modals
   const [takeQuizOpen, setTakeQuizOpen] = useState(false)
   const [activeAttempt, setActiveAttempt] = useState(null)
@@ -391,6 +396,23 @@ export default function CourseDetail() {
       ])
     },
   })
+
+  const generateAiQuestions = async () => {
+    if (!aiTopic.trim()) return
+    setIsGeneratingAi(true)
+    try {
+      await api.post(`/quizzes/${selectedQuizId}/generate-questions`, {
+        topic: aiTopic.trim(),
+        count: aiCount,
+      })
+      qc.invalidateQueries({ queryKey: ['quiz', selectedQuizId] })
+      setAiTopic('')
+    } catch (err) {
+      alert(err.response?.data?.error ?? "Une erreur est survenue lors de la génération.")
+    } finally {
+      setIsGeneratingAi(false)
+    }
+  }
 
   // Update general quiz configurations
   const updateQuizConfig = useMutation({
@@ -680,17 +702,75 @@ export default function CourseDetail() {
                 value={quizAttempts}
                 onChange={(e) => setQuizAttempts(parseInt(e.target.value))}
               />
-
               <Button
                 variant="primary"
                 className="w-full text-xs font-semibold py-2"
                 onClick={() => {
-                  // Save simulated parameters
                   alert("Paramètres de l'évaluation sauvegardés.");
                 }}
               >
                 💾 Sauvegarder les paramètres
               </Button>
+
+              <div className="h-px bg-slate-200 my-4" />
+
+              <div className="space-y-3 bg-gradient-to-tr from-violet-50/50 to-fuchsia-50/50 border border-violet-100 rounded-xl p-4">
+                <div>
+                  <h4 className="text-xs font-black text-violet-800 uppercase tracking-wider flex items-center gap-1">
+                    <Sparkles className="text-violet-600 w-3.5 h-3.5" />
+                    Générateur de Quiz IA
+                  </h4>
+                  <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+                    Générez automatiquement des questions de quiz QCM structurées à partir d'un sujet de votre choix.
+                  </p>
+                </div>
+                
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 block mb-1">Sujet / Concept cible</label>
+                    <textarea
+                      placeholder="Ex: Les fermetures (closures) en Javascript, les jointures SQL..."
+                      className="w-full rounded-lg border border-slate-200 p-2 text-xs outline-none focus:border-violet-500"
+                      rows="2"
+                      value={aiTopic}
+                      onChange={(e) => setAiTopic(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 block mb-1">Nombre de questions</label>
+                    <select
+                      className="w-full rounded-lg border border-slate-200 p-1.5 text-xs bg-white outline-none focus:border-violet-500"
+                      value={aiCount}
+                      onChange={(e) => setAiCount(parseInt(e.target.value))}
+                    >
+                      <option value="1">1 Question</option>
+                      <option value="3">3 Questions</option>
+                      <option value="5">5 Questions</option>
+                    </select>
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="primary"
+                    className="w-full bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold py-2 rounded-lg flex items-center justify-center gap-1.5 border-none"
+                    disabled={isGeneratingAi || !aiTopic.trim()}
+                    onClick={generateAiQuestions}
+                  >
+                    {isGeneratingAi ? (
+                      <>
+                        <Spinner size="xs" />
+                        Génération en cours...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Générer avec l'IA
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
 

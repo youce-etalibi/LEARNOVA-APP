@@ -11,6 +11,7 @@ use App\Models\QuizAnswer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Services\OpenRouterService;
 
 class QuizController extends Controller
 {
@@ -308,5 +309,84 @@ class QuizController extends Controller
             ->get();
 
         return response()->json($attempts);
+    }
+
+    /**
+     * POST /api/quizzes/{quiz}/generate-questions
+     */
+    public function generateQuestions(Request $request, Quiz $quiz): JsonResponse
+    {
+        $request->validate([
+            'topic' => ['required', 'string', 'min:3'],
+            'count' => ['nullable', 'integer', 'min:1', 'max:10'],
+        ]);
+
+        $topic = $request->input('topic');
+        $count = $request->input('count', 3);
+
+        $context = "Tu es un assistant pédagogique universitaire. Ta tâche est de concevoir un quiz de niveau universitaire sur le sujet fourni.\n";
+        $context .= "Tu dois retourner UNIQUEMENT un tableau JSON valide contenant exactement " . $count . " questions au format suivant :\n";
+        $context .= "[\n";
+        $context .= "  {\n";
+        $context .= "    \"question\": \"Le texte de la question...\",\n";
+        $context .= "    \"type\": \"mcq\",\n";
+        $context .= "    \"points\": 5,\n";
+        $context .= "    \"explanation\": \"Explication pédagogique détaillée...\",\n";
+        $context .= "    \"options\": [\n";
+        $context .= "      {\"label\": \"Option correcte\", \"is_correct\": true},\n";
+        $context .= "      {\"label\": \"Option incorrecte 1\", \"is_correct\": false},\n";
+        $context .= "      {\"label\": \"Option incorrecte 2\", \"is_correct\": false}\n";
+        $context .= "    ]\n";
+        $context .= "  }\n";
+        $context .= "]\n";
+        $context .= "Règles strictes :\n";
+        $context .= "1. Ne renvoie AUCUN texte en dehors du tableau JSON.\n";
+        $context .= "2. Les questions doivent être en français.\n";
+        $context .= "3. Assure-toi que chaque question a exactement une seule option correcte.";
+
+        $messages = [
+            ['role' => 'system', 'content' => $context],
+            ['role' => 'user', 'content' => "Génère les questions pour le sujet : " . $topic]
+        ];
+
+        $openRouterService = new OpenRouterService();
+        $questionsData = $openRouterService->getJsonStructure($messages);
+
+        if (!$questionsData || !is_array($questionsData)) {
+            return response()->json(['error' => "L'IA a échoué à générer un format de questions valide. Veuillez réessayer."], 500);
+        }
+
+        $createdQuestions = [];
+
+        DB::transaction(function () use ($quiz, $questionsData, &$createdQuestions) {
+            foreach ($questionsData as $item) {
+                if (!isset($item['question']) || !isset($item['options']) || !is_array($item['options'])) {
+                    continue;
+                }
+
+                $q = QuizQuestion::create([
+                    'quiz_id' => $quiz->id,
+                    'question' => $item['question'],
+                    'type' => $item['type'] ?? 'mcq',
+                    'points' => $item['points'] ?? 5,
+                    'explanation' => $item['explanation'] ?? null,
+                ]);
+
+                foreach ($item['options'] as $opt) {
+                    QuizOption::create([
+                        'question_id' => $q->id,
+                        'label' => $opt['label'] ?? 'Option',
+                        'is_correct' => (bool)($opt['is_correct'] ?? false),
+                    ]);
+                }
+
+                $createdQuestions[] = $q->load('options');
+            }
+        });
+
+        return response()->json([
+            'message' => count($createdQuestions) . ' questions générées avec succès !',
+            'questions' => $createdQuestions,
+        ], 201);
     }
 }

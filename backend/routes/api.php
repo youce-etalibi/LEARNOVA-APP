@@ -180,6 +180,7 @@ Route::middleware('auth:api')->group(function () {
 
         // Quiz Question Builder
         Route::post('quizzes/{quiz}/questions', [QuizController::class, 'addQuestion']);
+        Route::post('quizzes/{quiz}/generate-questions', [QuizController::class, 'generateQuestions']);
         Route::get('question-banks', [QuizController::class, 'indexQuestionBank']);
         Route::post('question-banks', [QuizController::class, 'storeQuestionBank']);
         Route::post('quizzes/{quiz}/import-question', [QuizController::class, 'importQuestion']);

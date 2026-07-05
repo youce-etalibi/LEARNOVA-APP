@@ -5,6 +5,54 @@ import api from '../lib/api'
 import { useAuthStore } from '../store/auth'
 import { Button, Input, Card, Spinner, EmptyState, Badge, Modal } from '../components/ui'
 
+function formatMessageContent(content) {
+  if (!content) return '';
+  
+  const parts = content.split(/(```[\s\S]*?```)/g);
+  
+  return parts.map((part, index) => {
+    if (part.startsWith('```')) {
+      const code = part.replace(/```/g, '').trim();
+      return (
+        <pre key={index} className="my-2 overflow-x-auto rounded-lg bg-slate-800 p-3.5 font-mono text-[10px] text-slate-100 leading-snug">
+          <code>{code}</code>
+        </pre>
+      );
+    }
+    
+    const lines = part.split('\n');
+    return lines.map((line, lineIdx) => {
+      const isBullet = line.trim().startsWith('- ') || line.trim().startsWith('* ');
+      let cleanLine = line;
+      if (isBullet) {
+        cleanLine = line.trim().replace(/^[-*]\s+/, '');
+      }
+
+      const textParts = cleanLine.split(/(\*\*.*?\*\*)/g);
+      const renderedText = textParts.map((subPart, subIdx) => {
+        if (subPart.startsWith('**') && subPart.endsWith('**')) {
+          return <strong key={subIdx} className="font-bold text-slate-900">{subPart.slice(2, -2)}</strong>;
+        }
+        return subPart;
+      });
+
+      if (isBullet) {
+        return (
+          <li key={lineIdx} className="ml-4 list-disc text-xs leading-relaxed my-0.5 text-slate-700">
+            {renderedText}
+          </li>
+        );
+      }
+
+      return (
+        <span key={lineIdx} className="block min-h-[0.5rem] text-xs leading-relaxed text-slate-700">
+          {renderedText}
+        </span>
+      );
+    });
+  });
+}
+
 export default function Chat() {
   const queryClient = useQueryClient()
   const { user, roles } = useAuthStore()
@@ -129,8 +177,17 @@ export default function Chat() {
     })
   }
 
+  // Sort conversations so that AI chat is at the top, then by updated_at
+  const sortedConversations = [...conversations].sort((a, b) => {
+    const aIsAi = a.other_user?.email === 'ai@learnova.test'
+    const bIsAi = b.other_user?.email === 'ai@learnova.test'
+    if (aIsAi) return -1
+    if (bIsAi) return 1
+    return new Date(b.updated_at) - new Date(a.updated_at)
+  })
+
   // Filters conversation list by search query
-  const filteredConversations = conversations.filter((c) =>
+  const filteredConversations = sortedConversations.filter((c) =>
     c.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
@@ -203,11 +260,17 @@ export default function Chat() {
                 >
                   {/* Avatar */}
                   <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-bold text-sm ${
-                    c.type === 'group' 
-                      ? 'bg-brand-50 text-brand-600 border border-brand-100' 
-                      : 'bg-iris-50 text-iris-600 border border-iris-100'
+                    c.other_user?.email === 'ai@learnova.test'
+                      ? 'bg-gradient-to-tr from-violet-500 to-fuchsia-500 text-white border border-fuchsia-200 shadow-sm'
+                      : c.type === 'group' 
+                        ? 'bg-brand-50 text-brand-600 border border-brand-100' 
+                        : 'bg-iris-50 text-iris-600 border border-iris-100'
                   }`}>
-                    {c.avatar}
+                    {c.other_user?.email === 'ai@learnova.test' ? (
+                      <Icon icon="solar:magic-pen-linear" width="18" className="text-white" />
+                    ) : (
+                      c.avatar
+                    )}
                   </span>
 
                   {/* Details */}
@@ -221,6 +284,12 @@ export default function Chat() {
                       )}
                     </div>
                     
+                    {c.other_user?.email === 'ai@learnova.test' && (
+                      <span className="inline-flex items-center gap-0.5 text-[9px] font-black text-fuchsia-600 uppercase tracking-wider">
+                        Assistant IA ✨
+                      </span>
+                    )}
+
                     {c.type === 'group' && (
                       <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-brand-500 uppercase tracking-wider">
                         Groupe
@@ -261,11 +330,17 @@ export default function Chat() {
             <div className="flex items-center justify-between border-b border-slate-50 p-4">
               <div className="flex items-center gap-3">
                 <span className={`flex h-10 w-10 items-center justify-center rounded-xl font-bold text-sm ${
-                  activeConv?.type === 'group' 
-                    ? 'bg-brand-50 text-brand-600 border border-brand-100' 
-                    : 'bg-iris-50 text-iris-600 border border-iris-100'
+                  activeConv?.other_user?.email === 'ai@learnova.test'
+                    ? 'bg-gradient-to-tr from-violet-500 to-fuchsia-500 text-white border border-fuchsia-200'
+                    : activeConv?.type === 'group' 
+                      ? 'bg-brand-50 text-brand-600 border border-brand-100' 
+                      : 'bg-iris-50 text-iris-600 border border-iris-100'
                 }`}>
-                  {activeConv?.avatar}
+                  {activeConv?.other_user?.email === 'ai@learnova.test' ? (
+                    <Icon icon="solar:magic-pen-linear" width="18" className="text-white" />
+                  ) : (
+                    activeConv?.avatar
+                  )}
                 </span>
                 <div>
                   <h3 className="text-sm font-bold text-slate-800">{activeConv?.name}</h3>
@@ -309,9 +384,11 @@ export default function Chat() {
                       <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold ${
                         isMe 
                           ? 'bg-brand-500 text-white' 
-                          : 'bg-slate-200 text-slate-600'
+                          : msg.sender_name === 'Learnova IA'
+                            ? 'bg-gradient-to-tr from-violet-500 to-fuchsia-500 text-white shadow-sm'
+                            : 'bg-slate-200 text-slate-600'
                       }`}>
-                        {msg.sender_name[0].toUpperCase()}
+                        {msg.sender_name === 'Learnova IA' ? '🤖' : msg.sender_name[0].toUpperCase()}
                       </span>
 
                       {/* Content bubble */}
@@ -328,7 +405,7 @@ export default function Chat() {
                               : 'bg-white border border-slate-100 text-slate-700 rounded-tl-none'
                           }`}
                         >
-                          {msg.content}
+                          {formatMessageContent(msg.content)}
                         </div>
                         <span className={`block text-[8px] text-slate-400 font-medium ${isMe ? 'text-right' : ''}`}>
                           {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
