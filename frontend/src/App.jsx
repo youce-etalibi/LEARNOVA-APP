@@ -17,6 +17,7 @@ import Profile from './pages/Profile'
 import Announcements from './pages/Announcements'
 import Seances from './pages/Seances'
 import Grades from './pages/Grades'
+import Chat from './pages/Chat'
 import Absences from './pages/Absences'
 import Courses from './pages/Courses'
 import CourseDetail from './pages/CourseDetail'
@@ -61,6 +62,7 @@ export default function App() {
             }
           >
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/chat" element={<Chat />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/announcements" element={<Announcements />} />
             <Route path="/seances" element={<Seances />} />

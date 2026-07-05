@@ -16,6 +16,18 @@ export default function Navbar({ collapsed, onToggleSidebar, onOpenMobile }) {
 
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  useEffect(() => {
+    const fetchUnread = () => {
+      api.get('/chat/unread-count')
+        .then((r) => setUnreadCount(r.data.unread_count || 0))
+        .catch(() => {})
+    }
+    fetchUnread()
+    const interval = setInterval(fetchUnread, 5000)
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -80,9 +92,10 @@ export default function Navbar({ collapsed, onToggleSidebar, onOpenMobile }) {
           className="navbar__iconbtn has-badge"
           aria-label={t('navbar.messages')}
           title={t('navbar.messages')}
+          onClick={() => navigate('/chat')}
         >
           <Icon icon="solar:chat-round-line-linear" />
-          <span className="navbar__badge">3</span>
+          {unreadCount > 0 && <span className="navbar__badge">{unreadCount}</span>}
         </button>
 
         <button

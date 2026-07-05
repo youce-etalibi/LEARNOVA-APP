@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\PfeController;
 use App\Http\Controllers\Api\LessonProgressController;
 use App\Http\Controllers\Api\QuizController;
 use App\Http\Controllers\Api\AssignmentController;
+use App\Http\Controllers\Api\ChatController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/ping', fn () => response()->json([
@@ -204,6 +205,15 @@ Route::middleware('auth:api')->group(function () {
         Route::patch('pfe-projects/{pfe_project}/status', [PfeController::class, 'updateStatus']);
         Route::patch('pfe-projects/{pfe_project}/grade', [PfeController::class, 'gradeDefense']);
     });
+
+    // Chat & Communication System (all authenticated users)
+    Route::get('chat/conversations', [ChatController::class, 'index']);
+    Route::get('chat/conversations/{id}', [ChatController::class, 'show']);
+    Route::post('chat/messages', [ChatController::class, 'store']);
+    Route::post('chat/conversations/direct', [ChatController::class, 'startDirect']);
+    Route::post('chat/conversations/group', [ChatController::class, 'createGroup']);
+    Route::get('chat/contacts', [ChatController::class, 'getEligibleContacts']);
+    Route::get('chat/unread-count', [ChatController::class, 'getUnreadCount']);
 
     /*
     | Student — justify own absences & PFE
